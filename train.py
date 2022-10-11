@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import itertools
+import torch
 import os
 import warnings
 from collections import Counter
@@ -127,8 +128,8 @@ def inference(
         )
         loss, cls_hits = trainer.batch_inference(X_test, y_test)
     acc = {cls: np.mean(hits) for cls, hits in cls_hits.items()}
-    test_performance = {"loss": loss, "accuracy": acc}
-    train_labels = np.nonzero(train_labels, size=train_labels.shape[0])[-1]
+    test_performance = {"loss": loss.item(), "accuracy": acc}
+    train_labels = torch.nonzero(train_labels)[:, -1]
     cls_distribution = dict(Counter(train_labels.tolist()))
 
     print(test_performance)

@@ -166,7 +166,7 @@ if __name__ == "__main__":
         trainer=trainer,
         X_test=X_test,
         y_test=y_test,
-        train_labels=train_set[1],
+        train_labels=torch.from_numpy(np.asarray(train_set[1])),
         model_config=model_config,
         data_config=data_config,
     )
