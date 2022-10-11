@@ -159,7 +159,7 @@ if __name__ == "__main__":
         X_test = images
 
     X_test = X_test.permute(0, 3, 1, 2)
-    y_test = F.one_hot(labels, num_classes=torch.max(labels) + 1)
+    y_test = F.one_hot(labels, num_classes=torch.max(labels) + 1).type(torch.FloatTensor)
 
     train.inference(
         out_path=args.out_path,
