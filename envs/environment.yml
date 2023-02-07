@@ -1,0 +1,27 @@
+name: human_alignment
+channels:
+ - defaults
+ - conda-forge
+ - pytorch
+dependencies:
+ - python=3.9
+ - numpy=1.22.*
+ - pandas=1.4.*
+ - matplotlib=3.5.*
+ - seaborn=0.11.* 
+ - tqdm=4.64.*
+ - pytorch=1.13.*
+ - torchvision=0.13.1
+ - Pillow=9.1.* 
+ - pip
+ - pip:
+   - thingsvision==2.2.18
+   - pytorch_lightning==1.7.*
+   - einops 
+   - tueplots 
+   - ml_collections 
+   - flake8 
+   - pyflakes
+   - isort
+   - black
+   - git+https://github.com/openai/CLIP.git

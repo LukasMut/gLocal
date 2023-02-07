@@ -1,0 +1,11 @@
+.idea
+resources
+*.txt
+*.npy
+*.png
+*.jpg
+*.pkl
+*.DS_Store
+*.ipynb_checkpoints/
+*.html
+*.ipynb
