@@ -7,7 +7,8 @@
     </a>
 </div>
 
-# The human-machine representation space trade-off
+# When are human-aligned representations useful for ML downstream tasks?
+## On the human-machine representation space trade-off
 
 ## Environment setup and dependencies
 
