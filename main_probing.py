@@ -389,7 +389,10 @@ def run(
         predictions = torch.cat(predictions, dim=0).tolist()
         ooo_choices.append(predictions)
         cv_results[f"fold_{k:02d}"] = val_performance
-    transformation = linear_probe.transform.data.detach().cpu().numpy()
+    transformation = {}
+    transformation["weights"] = linear_probe.transform_w.data.detach().cpu().numpy()
+    if optim_cfg["use_bias"]:
+        transformation["bias"] = linear_probe.transform_b.data.detach().cpu().numpy()
     ooo_choices = np.concatenate(ooo_choices)
     return ooo_choices, cv_results, transformation
 
@@ -431,5 +434,11 @@ if __name__ == "__main__":
     )
     if not os.path.exists(out_path):
         os.makedirs(out_path, exist_ok=True)
-    with open(os.path.join(out_path, "transform.npy"), "wb") as f:
-        np.save(file=f, arr=transform)
+
+    if optim_cfg["use_bias"]:
+        with open(os.path.join(out_path, "transform.npz"), "wb") as f:
+            np.savez_compressed(file=f, weights=transform["weights"], bias=transform["bias"])
+    else:
+       with open(os.path.join(out_path, "transform.npz"), "wb") as f:
+           np.savez_compressed(file=f, weights=transform["weights"])
+
