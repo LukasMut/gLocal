@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 
+
 from .triplet_loss import TripletLoss
 
 FrozenDict = Any
@@ -26,32 +27,40 @@ class Linear(pl.LightningModule):
         self.optim = optim_cfg["optim"]
         self.lr = optim_cfg["lr"]
         self.lmbda = optim_cfg["lmbda"]
-        self.apply_normalization = optim_cfg["apply_normalization"]
+        self.use_bias = optim_cfg["use_bias"]
+        self.scale = optim_cfg["sigma"]
         self.loss_fun = TripletLoss(temperature=1.0)
-        initialization = self.get_initialization(optim_cfg)
-        self.transform = torch.nn.Parameter(
-            data=initialization,
-            requires_grad=True,
-        )
+        initialization = self.get_initialization()
 
-    def get_initialization(self, optim_cfg: Dict[str, Any]) -> Tensor:
-        """Initialize the transformation matrix."""
-        if self.apply_normalization:
-            # initialize the transformation matrix with \tau I (temperature-scaled identity matrix)
-            initialization = torch.eye(self.feature_dim) * optim_cfg["temperature"]
-        else:
-            # initialize the transformation matrix with values drawn from a tight Gaussian with very small width
-            initialization = torch.normal(
-                mean=torch.zeros(self.feature_dim, self.feature_dim),
-                std=torch.ones(self.feature_dim, self.feature_dim) * optim_cfg["sigma"],
+        if self.use_bias:
+            self.transform_w = torch.nn.Parameter(
+                data=initialization[0],
+                requires_grad=True,
             )
-        return initialization
+            self.transform_b = torch.nn.Parameter(
+                data=initialization[1],
+                requires_grad=True,
+            )
+        else:
+            self.transform_w = torch.nn.Parameter(
+                data=initialization,
+                requires_grad=True,
+            )
+
+    def get_initialization(self) -> Tensor:
+        """Initialize the transformation matrix."""
+        # initialize the transformation matrix with values drawn from a tight Gaussian with very small width
+        weights = torch.eye(self.feature_dim) * self.scale
+        if self.use_bias:
+            bias = torch.ones(self.feature_dim) * self.scale
+            return weights, bias
+        return weights
 
     def forward(self, one_hots: Tensor) -> Tensor:
-        embedding = self.features @ self.transform
-        # normalize object embeddings to lie on the unit-sphere
-        if self.apply_normalization:
-            embedding = F.normalize(embedding, dim=1)
+        if self.use_bias:
+            embedding = self.features @ self.transform_w + self.transform_b
+        else:
+            embedding = self.features @ self.transform_w
         batch_embeddings = one_hots @ embedding
         return batch_embeddings
 
@@ -110,9 +119,9 @@ class Linear(pl.LightningModule):
     def regularization(self, alpha: float = 1.0) -> Tensor:
         """Apply combination of l2 and l1 regularization during training."""
         # NOTE: Frobenius norm in PyTorch is equivalent to torch.linalg.vector_norm(self.transform, ord=2, dim=(0, 1)))
-        l2_reg = alpha * torch.linalg.norm(self.transform, ord="fro")
+        l2_reg = alpha * torch.linalg.norm(self.transform_w, ord="fro")
         l1_reg = (1 - alpha) * torch.linalg.vector_norm(
-            self.transform, ord=1, dim=(0, 1)
+            self.transform_w, ord=1, dim=(0, 1)
         )
         complexity_loss = self.lmbda * (l2_reg + l1_reg)
         return complexity_loss
