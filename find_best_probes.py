@@ -118,6 +118,13 @@ def find_best_transforms(
         )
         try:
             transform = load_transform(subdir)
+            weights = transform["weights"]
+            try:
+                bias = transform["bias"]
+                transform = np.c_[weights, bias]
+                print("\nConcatenated bias with weights.")
+            except KeyError:
+                print("\nCurrent probe does not have a bias.\n")
             transforms[source][name][module] = transform
         except FileNotFoundError:
             warnings.warn(
@@ -135,7 +142,7 @@ def find_best_transforms(
 
 
 def load_transform(subdir: str) -> Array:
-    with open(os.path.join(subdir, "transform.npy"), "rb") as f:
+    with open(os.path.join(subdir, "transform.npz"), "rb") as f:
         transform = np.load(f)
     return transform
 
