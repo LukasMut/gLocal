@@ -29,6 +29,7 @@ class Linear(pl.LightningModule):
         self.lmbda = optim_cfg["lmbda"]
         self.use_bias = optim_cfg["use_bias"]
         self.scale = optim_cfg["sigma"]
+        self.reg = optim_cfg["reg"]
         self.loss_fun = TripletLoss(temperature=1.0)
         initialization = self.get_initialization()
 
@@ -116,7 +117,7 @@ class Linear(pl.LightningModule):
         """Normalize object embeddings to have unit norm."""
         return list(map(lambda obj: F.normalize(obj, dim=1), triplet))
 
-    def regularization(self, alpha: float = 1.0) -> Tensor:
+    def l2_regularization(self, alpha: float = 1.0) -> Tensor:
         """Apply combination of l2 and l1 regularization during training."""
         # NOTE: Frobenius norm in PyTorch is equivalent to torch.linalg.vector_norm(self.transform, ord=2, dim=(0, 1)))
         l2_reg = alpha * torch.linalg.norm(self.transform_w, ord="fro")
@@ -126,13 +127,20 @@ class Linear(pl.LightningModule):
         complexity_loss = self.lmbda * (l2_reg + l1_reg)
         return complexity_loss
 
+    def eye_regularization(self) -> Tensor:
+        complexity_loss = self.lmbda * torch.sum((self.transform_w - torch.eye(self.feature_dim) * torch.mean(torch.diag(self.transform_w)))**2)
+        return complexity_loss
+
     def training_step(self, one_hots: Tensor, batch_idx: int):
         batch_embeddings = self(one_hots)
         anchor, positive, negative = self.unbind(batch_embeddings)
         dots = self.compute_similarities(anchor, positive, negative)
         c_entropy = self.loss_fun(dots)
         # apply l1 and l2 regularization during training to prevent overfitting to train objects
-        complexity_loss = self.regularization()
+        if self.reg == "l2":
+            complexity_loss = self.l2_regularization()
+        else:
+            complexity_loss = self.eye_regularization()
         loss = c_entropy + complexity_loss
         acc = self.choice_accuracy(dots)
         self.log("train_loss", c_entropy, on_epoch=True)

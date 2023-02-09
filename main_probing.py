@@ -73,6 +73,7 @@ def parseargs():
     )
     aa("--optim", type=str, default="Adam", choices=["Adam", "AdamW", "SGD"])
     aa("--learning_rate", type=float, default=1e-3)
+    aa("--regularization", type=str, default="l2", choices=["l2", "eye"])
     aa(
         "--lmbda",
         type=float,
@@ -136,6 +137,7 @@ def create_optimization_config(args) -> Tuple[FrozenDict, FrozenDict]:
     optim_cfg = dict()
     optim_cfg["optim"] = args.optim
     optim_cfg["lr"] = args.learning_rate
+    optim_cfg["reg"] = args.regularization
     optim_cfg["lmbda"] = args.lmbda
     optim_cfg["n_folds"] = args.n_folds
     optim_cfg["batch_size"] = args.batch_size
@@ -226,6 +228,7 @@ def make_results_df(
     model_name: str,
     module_name: str,
     source: str,
+    reg: str,
     lmbda: float,
     optim: str,
     lr: float,
@@ -240,7 +243,8 @@ def make_results_df(
     probing_results_current_run["module"] = module_name
     probing_results_current_run["family"] = utils.analyses.get_family_name(model_name)
     probing_results_current_run["source"] = source
-    probing_results_current_run["l2_reg"] = lmbda
+    probing_results_current_run["reg"] = reg
+    probing_results_current_run["lmbda"] = lmbda
     probing_results_current_run["optim"] = optim.lower()
     probing_results_current_run["lr"] = lr
     probing_results_current_run["n_folds"] = n_folds
@@ -269,6 +273,7 @@ def save_results(args, probing_acc: float, probing_loss: float, ooo_choices: Arr
             model_name=args.model,
             module_name=args.module,
             source=args.source,
+            reg=args.regularization,
             lmbda=args.lmbda,
             optim=args.optim,
             lr=args.learning_rate,
@@ -291,7 +296,8 @@ def save_results(args, probing_acc: float, probing_loss: float, ooo_choices: Arr
             "module",
             "family",
             "source",
-            "l2_reg",
+            "reg",
+            "lambda",
             "optim",
             "lr",
             "n_folds",
@@ -305,6 +311,7 @@ def save_results(args, probing_acc: float, probing_loss: float, ooo_choices: Arr
             model_name=args.model,
             module_name=args.module,
             source=args.source,
+            reg=args.regularization,
             lmbda=args.lmbda,
             optim=args.optim,
             lr=args.learning_rate,
