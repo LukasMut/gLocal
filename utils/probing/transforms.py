@@ -128,7 +128,7 @@ class Linear(pl.LightningModule):
         return complexity_loss
 
     def eye_regularization(self) -> Tensor:
-        complexity_loss = self.lmbda * torch.sum((self.transform_w - torch.eye(self.feature_dim) * torch.mean(torch.diag(self.transform_w)))**2)
+        complexity_loss = self.lmbda * torch.sum((self.transform_w - torch.eye(self.feature_dim).to(self.transform_w.device) * torch.mean(torch.diag(self.transform_w)))**2)
         return complexity_loss
 
     def training_step(self, one_hots: Tensor, batch_idx: int):
