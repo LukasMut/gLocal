@@ -143,8 +143,7 @@ def find_best_transforms(
 
 
 def load_transform(subdir: str) -> Array:
-    with open(os.path.join(subdir, "transform.npz"), "rb") as f:
-        transform = np.load(f)
+    transform = np.load(os.path.join(subdir, "transform.npz"))
     return transform
 
 
