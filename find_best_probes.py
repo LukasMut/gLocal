@@ -112,7 +112,7 @@ def find_best_transforms(
             name,
             module,
             str(row.n_folds),
-            str(row.l2_reg),
+            str(row.lmbda),
             row.optim,
             str(row.lr),
         )
@@ -124,6 +124,7 @@ def find_best_transforms(
                 transform = np.c_[weights, bias]
                 print("\nConcatenated bias with weights.")
             except KeyError:
+                transform = weights
                 print("\nCurrent probe does not have a bias.\n")
             transforms[source][name][module] = transform
         except FileNotFoundError:
