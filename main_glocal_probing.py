@@ -467,12 +467,12 @@ if __name__ == "__main__":
     model_cfg = create_model_config(args)
     ooo_choices, cv_results, transform = run(
         features=model_features,
-        model=args.model,
-        module=args.module,
+        imagenet_root=args.imagenet_root,
         data_root=args.data_root,
+        model_cfg=model_cfg,
+        optim_cfg=optim_cfg,
         n_objects=args.n_objects,
         device=args.device,
-        optim_cfg=optim_cfg,
         rnd_seed=args.rnd_seed,
         num_processes=args.num_processes,
     )
