@@ -73,11 +73,11 @@ class GlocalProbe(pl.LightningModule):
 
     def normalize_features(self, features: Tensor) -> Tuple[Tensor, Tensor]:
         """Map ImageNet features onto the unit-sphere."""
-        normalized_teacher_features = F.normalize(features)
+        normalized_teacher_features = F.normalize(features, dim=1)
         student_features = features @ self.transform_w
         if self.use_bias:
             student_features += self.transform_b
-        normalized_student_features = F.normalize(student_features)
+        normalized_student_features = F.normalize(student_features, dim=1)
         return normalized_teacher_features, normalized_student_features
 
     def forward(self, things_batch: Tensor, imagenet_features: Tensor) -> Tensor:
