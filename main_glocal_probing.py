@@ -77,6 +77,12 @@ def parseargs():
         choices=[5e-1, 1e-1, 5e-2, 1e-2],
     )
     aa(
+        "--tau",
+        type=float,
+        default=1,
+        help="temperature value for contrastive learning objective",
+    )
+    aa(
         "--lmbda",
         type=float,
         default=1e-3,
@@ -149,6 +155,7 @@ def create_optimization_config(args) -> Dict[str, Any]:
     optim_cfg["reg"] = args.regularization
     optim_cfg["lmbda"] = args.lmbda
     optim_cfg["alpha"] = args.alpha
+    optim_cfg["tau"] = args.tau
     optim_cfg["contrastive_batch_size"] = args.contrastive_batch_size
     optim_cfg["triplet_batch_size"] = args.triplet_batch_size
     optim_cfg["max_epochs"] = args.epochs

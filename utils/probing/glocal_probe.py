@@ -187,15 +187,16 @@ class GlocalProbe(pl.LightningModule):
 
     def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
         things_batch, imagenet_batch = batch
+        images, _ = imagenet_batch
         imagenet_features = self.teacher_extractor._extract_batch(
-            batch=imagenet_batch, module=self.module, flatten_acts=True
+            batch=images, module_name=self.module, flatten_acts=True
         )
         batch_embeddings, teacher_similarities, student_similarities = self(
             things_batch, imagenet_features
         )
         anchor, positive, negative = self.unbind(batch_embeddings)
         dots = self.compute_similarities(anchor, positive, negative)
-        c_entropy = self.loss_fun(dots)
+        c_entropy = self.global_loss_fun(dots)
         # apply l1 and l2 regularization during training to prevent overfitting to train objects
         if self.reg == "l2":
             complexity_loss = self.l2_regularization()
@@ -224,7 +225,7 @@ class GlocalProbe(pl.LightningModule):
         batch_embeddings = self.global_prediction(things_batch)
         anchor, positive, negative = self.unbind(batch_embeddings)
         similarities = self.compute_similarities(anchor, positive, negative)
-        loss = self.loss_fun(similarities)
+        loss = self.global_loss_fun(similarities)
         acc = self.choice_accuracy(similarities)
         return loss, acc
 
