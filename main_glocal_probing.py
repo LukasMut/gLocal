@@ -400,7 +400,6 @@ def run(
         imagenet_root,
         extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
-    
     triplets = utils.probing.load_triplets(data_root)
     features = (
         features - features.mean()

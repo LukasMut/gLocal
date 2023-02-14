@@ -17,6 +17,7 @@ dependencies:
  - pip:
    - thingsvision==2.2.18
    - pytorch_lightning==1.7.*
+   - functorch==0.2.* 
    - einops 
    - tueplots 
    - ml_collections 

@@ -188,9 +188,11 @@ class GlocalProbe(pl.LightningModule):
     def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
         things_batch, imagenet_batch = batch
         images, _ = imagenet_batch
+        # images = imagenet_batch
         imagenet_features = self.teacher_extractor._extract_batch(
             batch=images, module_name=self.module, flatten_acts=True
         )
+        imagenet_features = torch.from_numpy(imagenet_features)
         batch_embeddings, teacher_similarities, student_similarities = self(
             things_batch, imagenet_features
         )
