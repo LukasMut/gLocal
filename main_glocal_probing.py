@@ -192,12 +192,12 @@ def get_temperature(
     return temp
 
 
-def get_batches(dataset: Tensor, batch_size: int, train: bool, num_workers) -> Iterator:
+def get_batches(dataset: Tensor, batch_size: int, train: bool, num_workers: int = 0) -> Iterator:
     batches = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
         shuffle=True if train else False,
-        num_workers=0,
+        num_workers=num_workers,
         drop_last=False,
         pin_memory=True if train else False,
     )
@@ -380,10 +380,20 @@ def run(
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
     extractor = load_extractor(model_cfg)
+    """
+    from thingsvision.utils.data import ImageDataset
+    imagenet_train_set = ImageDataset(
+            root=imagenet_root,
+            out_path='./test_features',
+            backend=extractor.get_backend(),
+            transforms=extractor.get_transformations(resize_dim=256, crop_dim=224) # set input dimensionality to whatever is needed for your pretrained model
+            )
+    """
     imagenet_train_set = ImageFolder(
         imagenet_root,
         extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
+    
     triplets = utils.probing.load_triplets(data_root)
     features = (
         features - features.mean()
@@ -417,11 +427,13 @@ def run(
             dataset=train_triplets,
             batch_size=optim_cfg["triplet_batch_size"],
             train=True,
+            num_workers=0,
         )
         train_batches_imagenet = get_batches(
             dataset=imagenet_train_set,
             batch_size=optim_cfg["contrastive_batch_size"],
             train=True,
+            num_workers=8,
         )
         train_batches = utils.probing.zip_batches(
             train_batches_things, train_batches_imagenet
@@ -435,6 +447,7 @@ def run(
         glocal_probe = utils.probing.GlocalProbe(
             features=features,
             optim_cfg=optim_cfg,
+            model_cfg=model_cfg,
             extractor=extractor,
         )
         trainer = Trainer(
