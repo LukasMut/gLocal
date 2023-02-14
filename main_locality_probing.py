@@ -91,11 +91,18 @@ def parseargs():
         choices=[1e-1, 1e-2, 1e-3, 1e-4],
     )
     aa(
-        "--batch_size",
+        "--triplet_batch_size",
         type=int,
         default=256,
-        help="Use power of 2 for running optimization on GPU",
+        help="Use power of 2 for running optimization process on GPU",
         choices=[64, 128, 256, 512, 1024],
+    )
+    aa(
+        "--contrastive_batch_size",
+        type=int,
+        default=1024,
+        help="Use power of 2 for running optimization process on GPU",
+        choices=[256, 512, 1024, 2048, 4096],
     )
     aa(
         "--epochs",
