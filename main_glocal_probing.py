@@ -346,11 +346,22 @@ def save_results(
 
 
 def load_extractor(model_cfg: Dict[str, str]) -> Any:
+    model_name = model_cfg["model"]
+    if model_name.startswith("OpenCLIP"):
+        name, variant, data = model_name.split("_")
+        model_params = dict(variant=variant, dataset=data)
+    elif model_name.startswith("clip"):
+        name, variant = model_name.split("_")
+        model_params = dict(variant=variant)
+    else:
+        name = model_name
+        model_params = None
     extractor = get_extractor(
-        model_name=model_cfg["model"],
+        model_name=name,
         source=model_cfg["source"],
         device=model_cfg["device"],
         pretrained=True,
+        model_parameters=model_params,
     )
     return extractor
 
