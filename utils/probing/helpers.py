@@ -2,11 +2,23 @@ import json
 import os
 import warnings
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, Iterator, List
 
 import numpy as np
 
 Array = np.ndarray
+
+
+def repeat(object: Iterator, times=None) -> Iterator:
+    """Either repeat the iterator "times" times or infinitely many times."""
+    if times is None:
+        while True:
+            for x in object:
+                yield x
+    else:
+        for _ in range(times):
+            for x in object:
+                yield x
 
 
 def load_triplets(data_root: str) -> Array:
