@@ -10,7 +10,7 @@ Array = np.ndarray
 
 
 def repeat(object: Iterator, times=None) -> Iterator:
-    """Either repeat the iterator "times" times or infinitely many times."""
+    """Either repeat the iterator "times" times or repeat it infinitely many times."""
     if times is None:
         while True:
             for x in object:
@@ -19,6 +19,17 @@ def repeat(object: Iterator, times=None) -> Iterator:
         for _ in range(times):
             for x in object:
                 yield x
+
+
+def zip_train_batches(
+    train_batches_things: Iterator, train_batches_imagenet: Iterator
+) -> Iterator:
+    if len(train_batches_imagenet) > len(train_batches_things):
+        train_batches_things = repeat(train_batches_things)
+    elif len(train_batches_imagenet) < len(train_batches_things):
+        train_batches_imagenet = repeat(train_batches_imagenet)
+    train_batches = zip(train_batches_things, train_batches_imagenet)
+    return train_batches
 
 
 def load_triplets(data_root: str) -> Array:
