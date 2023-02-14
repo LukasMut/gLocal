@@ -412,7 +412,7 @@ def run(
             batch_size=optim_cfg["contrastive_batch_size"],
             train=True,
         )
-        train_batches = utils.probing.zip_train_batches(
+        train_batches = utils.probing.zip_batches(
             train_batches_things, train_batches_imagenet
         )
 

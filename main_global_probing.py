@@ -371,7 +371,7 @@ def run(
             batch_size=optim_cfg["batch_size"],
             train=False,
         )
-        linear_probe = utils.probing.Linear(
+        linear_probe = utils.probing.GlobalProbe(
             features=features,
             optim_cfg=optim_cfg,
         )

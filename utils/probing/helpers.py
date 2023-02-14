@@ -21,7 +21,7 @@ def repeat(object: Iterator, times=None) -> Iterator:
                 yield x
 
 
-def zip_train_batches(
+def zip_batches(
     train_batches_things: Iterator, train_batches_imagenet: Iterator
 ) -> Iterator:
     if len(train_batches_imagenet) > len(train_batches_things):
