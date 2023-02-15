@@ -185,7 +185,7 @@ class GlocalProbe(pl.LightningModule):
         )
         return complexity_loss
 
-    def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+    def training_step(self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int):
         things_objects, (imagenet_images, _) = batch
         imagenet_features = self.teacher_extractor.extract_features(
             batches=imagenet_images.unsqueeze(0),
