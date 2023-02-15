@@ -11,6 +11,10 @@ import pandas as pd
 import torch
 from ml_collections import config_dict
 from thingsvision import get_extractor
+from torchvision.datasets import CIFAR100, DTD, SUN397
+from torchvision.transforms import Compose, CenterCrop, Resize
+import torch.nn.functional as F
+from functools import partial
 
 import utils
 from downstream.fewshot.data import load_dataset
@@ -211,7 +215,7 @@ def get_features_targets(
                 subset,
                 batch_size=batch_size,
                 shuffle=shuffle,
-                num_workers=1,
+                num_workers=2,
                 worker_init_fn=lambda id: np.random.seed(id + i_batch * 4),
             )
 
@@ -275,10 +279,25 @@ def create_config_dicts(args, embedding_keys=None) -> Tuple[FrozenDict, FrozenDi
     model_cfg = config_dict.FrozenConfigDict(model_cfg)
     data_cfg.root = args.data_root
     data_cfg.name = args.dataset
-    data_cfg.category = None
+    try:
+        data_cfg.category = args.category
+    except:
+        data_cfg.category = None
     data_cfg = config_dict.FrozenConfigDict(data_cfg)
 
     return model_cfg, data_cfg
+
+
+def get_regressor(train_features: Array, train_targets: Array, regressor_type: str, k: Optional[int] = None):
+    if regressor_type == "ridge":
+        regressor = train_regression(
+                train_targets, train_features, k=k
+        )
+    elif regressor_type == "knn":
+        regressor = train_knn(train_targets, train_features)
+    else:
+        raise ValueError(f"Unknown regressor: {regressor_type}")
+    return regressor
 
 
 def run(
@@ -358,14 +377,7 @@ def run(
                     else:
                         train_features = train_features_original - things_mean
 
-                    if regressor_type == "ridge":
-                        regressor = train_regression(
-                            train_targets, train_features, k=n_shot
-                        )
-                    elif regressor_type == "knn":
-                        regressor = train_knn(train_targets, train_features)
-                    else:
-                        raise ValueError(f"Unknown regressor: {args.regressor}")
+                    regressor = get_regressor(train_features, train_targets, regressor_type, n_shot)
                     regressors[use_transforms].append(regressor)
 
             # Extract and evaluate features w and w/o transform. Due to memory constraints, for each class individually.
