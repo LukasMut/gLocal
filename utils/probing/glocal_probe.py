@@ -189,9 +189,12 @@ class GlocalProbe(pl.LightningModule):
         things_batch, imagenet_batch = batch
         images, _ = imagenet_batch
         # images = imagenet_batch
-        imagenet_features = self.teacher_extractor._extract_batch(
-            batch=images, module_name=self.module, flatten_acts=True
+        imagenet_features = self.teacher_extractor.extract_features(
+            batches=images.unsqueeze(0), module_name=self.module, flatten_acts=True
         )
+        # TODO: we want to change the "extract_features" method
+        # such that we get back a torch.Tensor rather than a np.ndarray,
+        # because the line below is unncessary computational overhead
         imagenet_features = torch.from_numpy(imagenet_features)
         batch_embeddings, teacher_similarities, student_similarities = self(
             things_batch, imagenet_features
