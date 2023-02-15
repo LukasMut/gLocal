@@ -259,10 +259,11 @@ def make_results_df(
     module_name: str,
     source: str,
     reg: str,
-    lmbda: float,
     optim: str,
     lr: float,
-    alpha: int,
+    alpha: float,
+    lmbda: float,
+    tau: float,
     bias: bool,
 ) -> pd.DataFrame:
     probing_results_current_run = pd.DataFrame(index=range(1), columns=columns)
@@ -276,6 +277,7 @@ def make_results_df(
     probing_results_current_run["reg"] = reg
     probing_results_current_run["alpha"] = alpha
     probing_results_current_run["lmbda"] = lmbda
+    probing_results_current_run["tau"] = tau
     probing_results_current_run["optim"] = optim.lower()
     probing_results_current_run["lr"] = lr
     probing_results_current_run["contrastive"] = True
@@ -307,10 +309,11 @@ def save_results(
             module_name=args.module,
             source=args.source,
             reg=args.regularization,
-            lmbda=args.lmbda,
             optim=args.optim,
             lr=args.learning_rate,
             alpha=args.alpha,
+            lmbda=args.lmbda,
+            tau=args.tau,
             bias=args.use_bias,
         )
         probing_results = pd.concat(
@@ -330,9 +333,11 @@ def save_results(
             "family",
             "source",
             "reg",
-            "lambda",
-            "alpha" "optim",
+            "optim",
             "lr",
+            "alpha",
+            "lambda",
+            "tau",
             "bias",
             "contrastive",
         ]
@@ -345,10 +350,11 @@ def save_results(
             module_name=args.module,
             source=args.source,
             reg=args.regularization,
+            alpha=args.alpha,
             lmbda=args.lmbda,
+            tau=args.tau,
             optim=args.optim,
             lr=args.learning_rate,
-            alpha=args.alpha,
             bias=args.use_bias,
         )
         probing_results.to_pickle(os.path.join(out_path, "probing_results.pkl"))
