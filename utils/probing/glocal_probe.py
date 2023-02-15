@@ -193,7 +193,7 @@ class GlocalProbe(pl.LightningModule):
             batches=images.unsqueeze(0),
             module_name=self.module,
             flatten_acts=True,
-            output_type="torch",
+            output_type="tensor",
         )
         batch_embeddings, teacher_similarities, student_similarities = self(
             things_batch, imagenet_features
