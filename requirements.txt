@@ -5,10 +5,10 @@ Pillow==9.1.*
 torch==1.13.*
 pandas==1.4.*
 torchvision==0.13.1
-thingsvision==2.2.18
+thingsvision==2.2.20
 functorch==0.2.*
 tqdm==4.64.0
-pytorch_lightning==1.7.*
+pytorch_lightning==1.8.*
 einops
 tueplots
 ml_collections
