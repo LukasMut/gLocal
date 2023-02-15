@@ -108,7 +108,7 @@ def parseargs():
         type=int,
         default=1024,
         help="Use power of 2 for running optimization process on GPU",
-        choices=[256, 512, 1024, 2048, 4096],
+        choices=[128, 256, 512, 1024, 2048, 4096],
     )
     aa(
         "--epochs",
@@ -199,7 +199,9 @@ def get_temperature(
     return temp
 
 
-def get_batches(dataset: Tensor, batch_size: int, train: bool, num_workers: int = 0) -> Iterator:
+def get_batches(
+    dataset: Tensor, batch_size: int, train: bool, num_workers: int = 0
+) -> Iterator:
     batches = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
