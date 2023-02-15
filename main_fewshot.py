@@ -4,7 +4,7 @@ import pickle
 import copy
 import warnings
 from datetime import datetime
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -14,7 +14,8 @@ from sklearn.linear_model import LogisticRegressionCV
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.metrics import accuracy_score, make_scorer
 from thingsvision import get_extractor
-from torchvision.datasets import CIFAR100, DTD
+from torchvision.datasets import CIFAR100, DTD, SUN397
+from torchvision.transforms import Compose, CenterCrop, Resize
 import torch.nn.functional as F
 from functools import partial
 
@@ -201,7 +202,7 @@ def regress(
 ):
     if regressor == "ridge":
         reg = train_regression(train_targets, train_features, k)
-    if regressor == "knn":
+    elif regressor == "knn":
         reg = train_knn(train_targets, train_features)
     else:
         raise ValueError(f"Unknown regressor: {regressor}")
@@ -209,7 +210,7 @@ def regress(
     return acc, preds
 
 
-def load_dataset(name: str, data_dir: str, train: bool, transform=None):
+def load_dataset(name: str, data_dir: str, train: Optional[bool]=None, transform=None):
     if name == "cifar100":
         dataset = CIFAR100(
             root=data_dir,
@@ -223,6 +224,21 @@ def load_dataset(name: str, data_dir: str, train: bool, transform=None):
             split="train" if train else "test",
             download=True,
             transform=transform,
+        )
+    elif name == "SUN":
+        composite_transform = Compose([
+            Resize(256),
+            CenterCrop(256),
+        ])
+        if transform:
+            composite_transform = Compose([
+                composite_transform,
+                transform
+            ])
+        dataset = SUN397(
+                root=data_dir,
+                download=True,
+                transform=composite_transform,
         )
     else:
         raise ValueError("\nUnknown dataset\n")
@@ -289,7 +305,7 @@ def get_features_targets(
                 subset,
                 batch_size=batch_size,
                 shuffle=shuffle,
-                num_workers=1,
+                num_workers=2,
                 worker_init_fn=lambda id: np.random.seed(id + i_batch * 4),
             )
 
@@ -303,6 +319,7 @@ def get_features_targets(
                 break
         Y = np.array(Y)
 
+        # Select the classifier token for ViTs
         if (
             source == "torchvision"
             and module in ["penultimate", "encoder.ln"]
@@ -313,7 +330,7 @@ def get_features_targets(
                 module_name=module,
                 flatten_acts=False,
             )
-            features = features[:, 0]  # select classifier token
+            features = features[:, 0].copy()  # select classifier token
             features = features.reshape((features.shape[0], -1))
         else:
             features = extractor.extract_features(
@@ -340,9 +357,24 @@ def create_config_dicts(args) -> Tuple[FrozenDict, FrozenDict]:
     model_cfg = config_dict.FrozenConfigDict(model_cfg)
     data_cfg.root = args.data_root
     data_cfg.name = args.dataset
-    data_cfg.category = None
+    try:
+        data_cfg.category = args.category
+    except:
+        data_cfg.category = None
     data_cfg = config_dict.FrozenConfigDict(data_cfg)
     return model_cfg, data_cfg
+
+
+def get_regressor(train_features: Array, train_targets: Array, regressor_type: str, k: Optional[int] = None):
+    if regressor_type == "ridge":
+        regressor = train_regression(
+                train_targets, train_features, k=k
+        )
+    elif regressor_type == "knn":
+        regressor = train_knn(train_targets, train_features)
+    else:
+        raise ValueError(f"Unknown regressor: {regressor_type}")
+    return regressor
 
 
 def run(
@@ -423,24 +455,15 @@ def run(
                             train_features_original - things_mean
                         ) / things_std
                         # train_features = train_features_original
-                        train_features = train_features @ transform
-                        if transform_type == "with_norm":
-                            train_features = torch.from_numpy(train_features)
-                            train_features = (
-                                F.normalize(train_features, dim=1).cpu().numpy()
-                            )
+                        if train_features.shape[-1] == (transform.shape[-1] - 1):
+                            train_features = train_features @ transform[:, :-1] + transform[:, -1]
+                        else:
+                            train_features = train_features @ transform
 
                     else:
                         train_features = train_features_original - things_mean
 
-                    if regressor_type == "ridge":
-                        regressor = train_regression(
-                            train_targets, train_features, k=n_shot
-                        )
-                    elif regressor_type == "knn":
-                        regressor = train_knn(train_targets, train_features)
-                    else:
-                        raise ValueError(f"Unknown regressor: {args.regressor}")
+                    regressor = get_regressor(train_features, train_targets, regressor_type, n_shot)
                     regressors[use_transforms].append(regressor)
 
             # Extract and evaluate features w and w/o transform. Due to memory constraints, for each class individually.
@@ -480,12 +503,10 @@ def run(
                                 test_features_original - things_mean
                             ) / things_std
                             # test_features = test_features_original
-                            test_features = test_features @ transform
-                            if transform_type == "with_norm":
-                                test_features = torch.from_numpy(test_features)
-                                test_features = (
-                                    F.normalize(test_features, dim=1).cpu().numpy()
-                                )
+                            if test_features.shape[-1] == (transform.shape[-1] - 1):
+                                test_features = test_features @ transform[:,:-1] + transform[:,-1]
+                            else:
+                                test_features = test_features @ transform
                         else:
                             test_features = test_features_original - things_mean
 
