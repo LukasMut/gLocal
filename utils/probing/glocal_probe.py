@@ -232,7 +232,7 @@ class GlocalProbe(pl.LightningModule):
         return loss, acc
 
     def predict_step(self, things_objects: Tensor, batch_idx: int):
-        batch_embeddings = self(things_objects)
+        batch_embeddings = self.global_prediction(things_objects)
         anchor, positive, negative = self.unbind(batch_embeddings)
         similarities = self.compute_similarities(anchor, positive, negative)
         sim_predictions = torch.argmax(
