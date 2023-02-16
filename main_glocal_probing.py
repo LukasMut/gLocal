@@ -67,7 +67,7 @@ def parseargs():
         default=1854,
     )
     aa("--optim", type=str, default="Adam", choices=["Adam", "AdamW", "SGD"])
-    aa("--learning_rate", type=float, default=1e-3)
+    aa("--learning_rate", type=float, metavar="eta", default=1e-3)
     aa("--regularization", type=str, default="l2", choices=["l2", "eye"])
     aa(
         "--alpha",
@@ -526,8 +526,9 @@ if __name__ == "__main__":
         args.source,
         args.model,
         args.module,
-        str(args.n_folds),
+        str(args.alpha),
         str(args.lmbda),
+        str(args.tau),
         args.optim.lower(),
         str(args.learning_rate),
     )
