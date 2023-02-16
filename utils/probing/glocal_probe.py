@@ -205,7 +205,7 @@ class GlocalProbe(pl.LightningModule):
         else:  # regularization towards the identity
             complexity_loss = self.eye_regularization()
         locality_loss = self.local_loss_fun(teacher_similarities, student_similarities)
-        loss = c_entropy + self.alpha * locality_loss + self.lmbda * complexity_loss
+        loss = (1 - self.alpha) * c_entropy + self.alpha * locality_loss + self.lmbda * complexity_loss
         acc = self.choice_accuracy(dots)
         self.log("train_loss", c_entropy, on_epoch=True)
         self.log("train_acc", acc, on_epoch=True)
