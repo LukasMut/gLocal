@@ -74,7 +74,7 @@ def parseargs():
         type=float,
         default=1e-1,
         help="Relative contribution of the contrastive loss term",
-        choices=[5e-1, 1e-1, 5e-2, 1e-2],
+        choices=[5e-1, 4e-1, 3e-1, 2e-1, 1e-1, 5e-2, 5e-2, 4e-2, 3e-2, 2e-2, 1e-2, 1e-2],
     )
     aa(
         "--tau",
@@ -86,7 +86,7 @@ def parseargs():
         "--lmbda",
         type=float,
         default=1e-3,
-        help="Relative contribution of the regularization term",
+        help="Relative contribution of the l2 or identity regularization term",
         choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
     )
     aa(
