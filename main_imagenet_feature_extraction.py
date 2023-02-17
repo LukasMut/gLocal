@@ -26,13 +26,13 @@ def parseargs():
         default="/home/space/datasets/imagenet/2012/",
     )
     aa("--out_path", type=str, help="path/to/imagenet/output/features")
-    aa("--model", type=str)
     aa(
         "--model_dict_path",
         type=str,
         default="/home/space/datasets/things/model_dict_all.json",
         help="Path to the model_dict.json",
     )
+    aa("--model", type=str)
     aa(
         "--module",
         type=str,
