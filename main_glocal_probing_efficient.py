@@ -31,12 +31,6 @@ def parseargs():
     aa("--dataset", type=str, help="Which dataset to use", default="things")
     aa("--model", type=str)
     aa(
-        "--model_dict_path",
-        type=str,
-        default="/home/space/datasets/things/model_dict_all.json",
-        help="Path to the model_dict.json",
-    )
-    aa(
         "--module",
         type=str,
         default="penultimate",
