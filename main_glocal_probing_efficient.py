@@ -10,7 +10,6 @@ import torch
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from sklearn.model_selection import KFold
-from thingsvision import get_extractor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -145,6 +144,7 @@ def parseargs():
         "--num_processes",
         type=int,
         default=4,
+        choices=[2, 4, 6, 8, 10, 12],
         help="Number of devices to use for performing distributed training on CPU",
     )
     aa(
@@ -177,17 +177,6 @@ def create_optimization_config(args) -> Dict[str, Any]:
     optim_cfg["ckptdir"] = os.path.join(args.log_dir, args.model, args.module)
     optim_cfg["sigma"] = args.sigma
     return optim_cfg
-
-
-def create_model_config(args) -> Dict[str, Any]:
-    """Create frozen config dict for optimization hyperparameters."""
-    model_cfg = dict()
-    model_config = utils.evaluation.load_model_config(args.model_dict_path)
-    model_cfg["model"] = args.model
-    model_cfg["module"] = model_config[args.model][args.module]["module_name"]
-    model_cfg["source"] = args.source
-    model_cfg["device"] = "cuda" if args.device == "gpu" else args.device
-    return model_cfg
 
 
 def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str, Array]:
@@ -372,32 +361,10 @@ def save_results(
         probing_results.to_pickle(os.path.join(out_path, "probing_results.pkl"))
 
 
-def load_extractor(model_cfg: Dict[str, str]) -> Any:
-    model_name = model_cfg["model"]
-    if model_name.startswith("OpenCLIP"):
-        name, variant, data = model_name.split("_")
-        model_params = dict(variant=variant, dataset=data)
-    elif model_name.startswith("clip"):
-        name, variant = model_name.split("_")
-        model_params = dict(variant=variant)
-    else:
-        name = model_name
-        model_params = None
-    extractor = get_extractor(
-        model_name=name,
-        source=model_cfg["source"],
-        device=model_cfg["device"],
-        pretrained=True,
-        model_parameters=model_params,
-    )
-    return extractor
-
-
 def run(
     features: Array,
     imagenet_features_root: str,
     data_root: str,
-    model_cfg: Dict[str, str],
     optim_cfg: Dict[str, Any],
     n_objects: int,
     device: str,
@@ -450,7 +417,7 @@ def run(
             dataset=imagenet_train_features,
             batch_size=optim_cfg["contrastive_batch_size"],
             train=True,
-            num_workers=16,
+            num_workers=num_processes,
         )
         val_batches_things = get_batches(
             dataset=val_triplets,
@@ -461,7 +428,7 @@ def run(
             dataset=imagenet_val_features,
             batch_size=optim_cfg["contrastive_batch_size"],
             train=True,
-            num_workers=16,
+            num_workers=num_processes,
         )
         train_batches = utils.probing.zip_batches(
             train_batches_things, train_batches_imagenet
@@ -472,7 +439,6 @@ def run(
         glocal_probe = utils.probing.GlocalFeatureProbe(
             features=features,
             optim_cfg=optim_cfg,
-            model_cfg=model_cfg,
         )
         trainer = Trainer(
             accelerator=device,
@@ -512,12 +478,10 @@ if __name__ == "__main__":
     features = load_features(args.probing_root)
     model_features = features[args.source][args.model][args.module]
     optim_cfg = create_optimization_config(args)
-    model_cfg = create_model_config(args)
     ooo_choices, cv_results, transform = run(
         features=model_features,
         imagenet_features_root=args.imagenet_features_root,
         data_root=args.data_root,
-        model_cfg=model_cfg,
         optim_cfg=optim_cfg,
         n_objects=args.n_objects,
         device=args.device,
