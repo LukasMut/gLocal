@@ -344,6 +344,17 @@ def create_config_dicts(args) -> Tuple[FrozenDict, FrozenDict]:
     return model_cfg, data_cfg
 
 
+def apply_transform(features: Array, transform: Array, things_mean: float, things_std: float, transform_type: str = None):
+    features = (features - things_mean) / things_std
+    features = train_features @ transform["weights"]
+    if "bias" in transform:
+        train_features = features + transform["bias"]
+    if transform_type == "with_norm":
+        train_features = torch.from_numpy(train_features)
+        train_features = (
+            F.normalize(train_features, dim=1).cpu().numpy()
+        )
+
 def run(
     n_shot: int,
     n_test: int,
@@ -410,19 +421,26 @@ def run(
                         try:
                             transform = transforms[source][model_name][
                                 model_cfg.module_type
-                            ]
+                            ]["weights"]
                         except KeyError:
                             warnings.warn(
                                 message=f"\nCould not find transformation matrix for {model_name}.\nSkipping evaluation for {model_name} and continuing with next model...\n",
                                 category=UserWarning,
                             )
                             continue
-
+                        try:
+                            bias = transforms[source][model_name][
+                                model_cfg.module_type
+                            ]["bias"]
+                        except KeyError:
+                            bias = None
                         train_features = (
                             train_features_original - things_mean
                         ) / things_std
                         # train_features = train_features_original
                         train_features = train_features @ transform
+                        if bias is not None:
+                            train_features = train_features + bias
                         if transform_type == "with_norm":
                             train_features = torch.from_numpy(train_features)
                             train_features = (
@@ -467,19 +485,26 @@ def run(
                             try:
                                 transform = transforms[source][model_name][
                                     model_cfg.module_type
-                                ]
+                                ]["weights"]
                             except KeyError:
                                 warnings.warn(
                                     message=f"\nCould not find transformation matrix for {model_name}.\nSkipping evaluation for {model_name} and continuing with next model...\n",
                                     category=UserWarning,
                                 )
                                 continue
-
+                            try:
+                                bias = transforms[source][model_name][
+                                    model_cfg.module_type
+                                ]["bias"]
+                            except KeyError:
+                                bias = None
                             test_features = (
                                 test_features_original - things_mean
                             ) / things_std
                             # test_features = test_features_original
                             test_features = test_features @ transform
+                            if bias is not None:
+                                test_features = test_features + bias
                             if transform_type == "with_norm":
                                 test_features = torch.from_numpy(test_features)
                                 test_features = (
