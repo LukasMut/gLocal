@@ -29,7 +29,7 @@ def parseargs():
         parser.add_argument(*args, **kwargs)
 
     aa("--data_root", type=str, help="path/to/things")
-    aa("--imagenet_root", type=str, help="path/to/imagenet/training/data")
+    aa("--imagenet_root", type=str, help="path/to/imagenet/data/folder")
     aa("--dataset", type=str, help="Which dataset to use", default="things")
     aa("--model", type=str)
     aa(
@@ -405,7 +405,11 @@ def run(
             )
     """
     imagenet_train_set = ImageFolder(
-        imagenet_root,
+        os.path.joint(imagenet_root, "train_set"),
+        extractor.get_transformations(resize_dim=256, crop_dim=224),
+    )
+    imagenet_val_set = ImageFolder(
+        os.path.joint(imagenet_root, "val_set"),
         extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
     triplets = utils.probing.load_triplets(data_root)
@@ -432,11 +436,6 @@ def run(
             triplets=triplet_partitioning["val"],
             n_objects=n_objects,
         )
-        train_batches_imagenet = get_batches(
-            dataset=imagenet_train_set,
-            batch_size=optim_cfg["contrastive_batch_size"],
-            train=True,
-        )
         train_batches_things = get_batches(
             dataset=train_triplets,
             batch_size=optim_cfg["triplet_batch_size"],
@@ -447,16 +446,24 @@ def run(
             dataset=imagenet_train_set,
             batch_size=optim_cfg["contrastive_batch_size"],
             train=True,
-            num_workers=8,
+            num_workers=16,
+        )
+        val_batches_things = get_batches(
+            dataset=val_triplets,
+            batch_size=optim_cfg["triplet_batch_size"],
+            train=False,
+        )
+        val_batches_imagenet = get_batches(
+            dataset=imagenet_val_set,
+            batch_size=optim_cfg["contrastive_batch_size"],
+            train=True,
+            num_workers=16,
         )
         train_batches = utils.probing.zip_batches(
             train_batches_things, train_batches_imagenet
         )
-
-        val_batches = get_batches(
-            dataset=val_triplets,
-            batch_size=optim_cfg["triplet_batch_size"],
-            train=False,
+        val_batches = utils.probing.zip_batches(
+            val_batches_things, val_batches_imagenet
         )
         glocal_probe = utils.probing.GlocalProbe(
             features=features,
