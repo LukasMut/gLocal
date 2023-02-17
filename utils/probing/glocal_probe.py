@@ -217,19 +217,19 @@ class GlocalProbe(pl.LightningModule):
         self.log("train_acc", acc, on_epoch=True)
         return loss
 
-    def validation_step(self, things_objects: Tensor, batch_idx: int):
-        loss, acc = self._shared_eval_step(things_objects, batch_idx)
+    def validation_step(self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int):
+        loss, acc = self._shared_eval_step(batch, batch_idx)
         metrics = {"val_acc": acc, "val_loss": loss}
         self.log_dict(metrics)
         return metrics
 
-    def test_step(self, things_objects: Tensor, batch_idx: int):
-        loss, acc = self._shared_eval_step(things_objects, batch_idx)
+    def test_step(self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int):
+        loss, acc = self._shared_eval_step(batch, batch_idx)
         metrics = {"test_acc": acc, "test_loss": loss}
         self.log_dict(metrics)
         return metrics
 
-    def _shared_eval_step(self, batch: Tensor, batch_idx: int):
+    def _shared_eval_step(self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int):
         things_objects, (imagenet_images, _) = batch
         imagenet_features = self.teacher_extractor.extract_features(
             batches=imagenet_images.unsqueeze(0),
@@ -248,7 +248,8 @@ class GlocalProbe(pl.LightningModule):
         acc = self.choice_accuracy(similarities)
         return loss, acc
 
-    def predict_step(self, things_objects: Tensor, batch_idx: int):
+    def predict_step(self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int):
+        things_objects, (_, _) = batch
         batch_embeddings = self.global_prediction(things_objects)
         anchor, positive, negative = self.unbind(batch_embeddings)
         similarities = self.compute_similarities(anchor, positive, negative)
@@ -469,14 +470,14 @@ class GlocalFeatureProbe(pl.LightningModule):
         self.log("train_acc", acc, on_epoch=True)
         return loss
 
-    def validation_step(self, things_objects: Tensor, batch_idx: int):
-        loss, acc = self._shared_eval_step(things_objects, batch_idx)
+    def validation_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+        loss, acc = self._shared_eval_step(batch, batch_idx)
         metrics = {"val_acc": acc, "val_loss": loss}
         self.log_dict(metrics)
         return metrics
 
-    def test_step(self, things_objects: Tensor, batch_idx: int):
-        loss, acc = self._shared_eval_step(things_objects, batch_idx)
+    def test_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+        loss, acc = self._shared_eval_step(batch, batch_idx)
         metrics = {"test_acc": acc, "test_loss": loss}
         self.log_dict(metrics)
         return metrics
@@ -494,7 +495,8 @@ class GlocalFeatureProbe(pl.LightningModule):
         acc = self.choice_accuracy(similarities)
         return loss, acc
 
-    def predict_step(self, things_objects: Tensor, batch_idx: int):
+    def predict_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+        things_objects, _ = batch
         batch_embeddings = self.global_prediction(things_objects)
         anchor, positive, negative = self.unbind(batch_embeddings)
         similarities = self.compute_similarities(anchor, positive, negative)
