@@ -223,11 +223,22 @@ class GlocalProbe(pl.LightningModule):
         self.log_dict(metrics)
         return metrics
 
-    def _shared_eval_step(self, things_objects: Tensor, batch_idx: int):
-        batch_embeddings = self.global_prediction(things_objects)
+    def _shared_eval_step(self, batch: Tensor, batch_idx: int):
+        things_objects, (imagenet_images, _) = batch
+        imagenet_features = self.teacher_extractor.extract_features(
+            batches=imagenet_images.unsqueeze(0),
+            module_name=self.module,
+            flatten_acts=True,
+            output_type="tensor",
+        )
+        batch_embeddings, teacher_similarities, student_similarities = self(
+            things_objects, imagenet_features
+        )
         anchor, positive, negative = self.unbind(batch_embeddings)
         similarities = self.compute_similarities(anchor, positive, negative)
-        loss = self.global_loss_fun(similarities)
+        global_loss = self.global_loss_fun(similarities)
+        locality_loss = self.local_loss_fun(teacher_similarities, student_similarities)
+        loss = global_loss + locality_loss
         acc = self.choice_accuracy(similarities)
         return loss, acc
 
