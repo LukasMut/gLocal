@@ -200,7 +200,7 @@ class GlocalProbe(pl.LightningModule):
         )
         anchor, positive, negative = self.unbind(batch_embeddings)
         dots = self.compute_similarities(anchor, positive, negative)
-        c_entropy = self.global_loss_fun(dots)
+        global_loss = self.global_loss_fun(dots)
         # apply l1 and l2 regularization during training to prevent overfitting to train objects
         if self.reg == "l2":
             complexity_loss = self.l2_regularization()
@@ -208,12 +208,12 @@ class GlocalProbe(pl.LightningModule):
             complexity_loss = self.eye_regularization()
         locality_loss = self.local_loss_fun(teacher_similarities, student_similarities)
         loss = (
-            (1 - self.alpha) * c_entropy
+            (1 - self.alpha) * global_loss
             + self.alpha * locality_loss
             + self.lmbda * complexity_loss
         )
         acc = self.choice_accuracy(dots)
-        self.log("train_loss", c_entropy, on_epoch=True)
+        self.log("train_loss", global_loss, on_epoch=True)
         self.log("train_acc", acc, on_epoch=True)
         return loss
 
@@ -452,7 +452,7 @@ class GlocalFeatureProbe(pl.LightningModule):
         )
         anchor, positive, negative = self.unbind(batch_embeddings)
         dots = self.compute_similarities(anchor, positive, negative)
-        c_entropy = self.global_loss_fun(dots)
+        global_loss = self.global_loss_fun(dots)
         # apply l1 and l2 regularization during training to prevent overfitting to train objects
         if self.reg == "l2":
             complexity_loss = self.l2_regularization()
@@ -460,12 +460,12 @@ class GlocalFeatureProbe(pl.LightningModule):
             complexity_loss = self.eye_regularization()
         locality_loss = self.local_loss_fun(teacher_similarities, student_similarities)
         loss = (
-            (1 - self.alpha) * c_entropy
+            (1 - self.alpha) * global_loss
             + self.alpha * locality_loss
             + self.lmbda * complexity_loss
         )
         acc = self.choice_accuracy(dots)
-        self.log("train_loss", c_entropy, on_epoch=True)
+        self.log("train_loss", global_loss, on_epoch=True)
         self.log("train_acc", acc, on_epoch=True)
         return loss
 
