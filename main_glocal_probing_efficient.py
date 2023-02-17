@@ -12,7 +12,6 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from sklearn.model_selection import KFold
 from thingsvision import get_extractor
 from torch.utils.data import DataLoader
-from torchvision.datasets import ImageFolder
 from tqdm import tqdm
 
 import utils
@@ -29,12 +28,7 @@ def parseargs():
         parser.add_argument(*args, **kwargs)
 
     aa("--data_root", type=str, help="path/to/things")
-    aa(
-        "--imagenet_root",
-        type=str,
-        help="path/to/imagenet/data/folder",
-        default="/home/space/datasets/imagenet/2012/",
-    )
+    aa("--imagenet_features_root", type=str, help="path/to/imagenet/features")
     aa("--dataset", type=str, help="Which dataset to use", default="things")
     aa("--model", type=str)
     aa(
@@ -401,7 +395,7 @@ def load_extractor(model_cfg: Dict[str, str]) -> Any:
 
 def run(
     features: Array,
-    imagenet_root: str,
+    imagenet_features_root: str,
     data_root: str,
     model_cfg: Dict[str, str],
     optim_cfg: Dict[str, Any],
@@ -412,23 +406,15 @@ def run(
 ) -> Tuple[Dict[str, List[float]], Array]:
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
-    extractor = load_extractor(model_cfg)
-    """
-    from thingsvision.utils.data import ImageDataset
-    imagenet_train_set = ImageDataset(
-            root=imagenet_root,
-            out_path='./test_features',
-            backend=extractor.get_backend(),
-            transforms=extractor.get_transformations(resize_dim=256, crop_dim=224) # set input dimensionality to whatever is needed for your pretrained model
-            )
-    """
-    imagenet_train_set = ImageFolder(
-        os.path.joint(imagenet_root, "train_set"),
-        extractor.get_transformations(resize_dim=256, crop_dim=224),
+    imagenet_train_features = utils.probing.Features(
+        root=imagenet_features_root,
+        split="train_set",
+        device=device,
     )
-    imagenet_val_set = ImageFolder(
-        os.path.joint(imagenet_root, "val_set"),
-        extractor.get_transformations(resize_dim=256, crop_dim=224),
+    imagenet_val_features = utils.probing.Features(
+        root=imagenet_features_root,
+        split="val",
+        device=device,
     )
     triplets = utils.probing.load_triplets(data_root)
     features = (
@@ -461,7 +447,7 @@ def run(
             num_workers=0,
         )
         train_batches_imagenet = get_batches(
-            dataset=imagenet_train_set,
+            dataset=imagenet_train_features,
             batch_size=optim_cfg["contrastive_batch_size"],
             train=True,
             num_workers=16,
@@ -472,7 +458,7 @@ def run(
             train=False,
         )
         val_batches_imagenet = get_batches(
-            dataset=imagenet_val_set,
+            dataset=imagenet_val_features,
             batch_size=optim_cfg["contrastive_batch_size"],
             train=True,
             num_workers=16,
@@ -483,11 +469,10 @@ def run(
         val_batches = utils.probing.zip_batches(
             val_batches_things, val_batches_imagenet
         )
-        glocal_probe = utils.probing.GlocalProbe(
+        glocal_probe = utils.probing.GlocalFeatureProbe(
             features=features,
             optim_cfg=optim_cfg,
             model_cfg=model_cfg,
-            extractor=extractor,
         )
         trainer = Trainer(
             accelerator=device,
@@ -530,7 +515,7 @@ if __name__ == "__main__":
     model_cfg = create_model_config(args)
     ooo_choices, cv_results, transform = run(
         features=model_features,
-        imagenet_root=args.imagenet_root,
+        imagenet_features_root=args.imagenet_features_root,
         data_root=args.data_root,
         model_cfg=model_cfg,
         optim_cfg=optim_cfg,
