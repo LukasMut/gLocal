@@ -173,9 +173,11 @@ if __name__ == "__main__":
     # parse arguments
     args = parseargs()
     model_cfg = create_model_config(args)
+    out_path = os.path.join(args.out_path, model_cfg["source"], model_cfg["model"], args.module)
     extract(
         imagenet_root=args.imagenet_root,
         model_cfg=model_cfg,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
+        out_path=out_path,
     )
