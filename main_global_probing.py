@@ -1,8 +1,8 @@
 import argparse
 import os
 import pickle
-from random import choices
 import warnings
+from random import choices
 from typing import Any, Callable, Dict, Iterator, List, Tuple
 
 import numpy as np
@@ -252,7 +252,9 @@ def make_results_df(
     return probing_results_current_run
 
 
-def save_results(args, probing_acc: float, probing_loss: float, ooo_choices: Array) -> None:
+def save_results(
+    args, probing_acc: float, probing_loss: float, ooo_choices: Array
+) -> None:
     out_path = os.path.join(args.probing_root, "results")
     if not os.path.exists(out_path):
         print("\nCreating results directory...\n")
@@ -340,7 +342,7 @@ def run(
     # features = utils.probing.standardize(features) # z-transform / standardize input features
     features = (
         features - features.mean()
-    ) / features.std()  # subtract mean and normalize by standard deviation    
+    ) / features.std()  # subtract mean and normalize by standard deviation
     objects = np.arange(n_objects)
     # Perform k-fold cross-validation with k = 3 or k = 4
     kf = KFold(n_splits=optim_cfg["n_folds"], random_state=rnd_seed, shuffle=True)
@@ -426,7 +428,9 @@ if __name__ == "__main__":
     )
     avg_cv_acc = get_mean_cv_acc(cv_results)
     avg_cv_loss = get_mean_cv_loss(cv_results)
-    save_results(args, probing_acc=avg_cv_acc, probing_loss=avg_cv_loss, ooo_choices=ooo_choices)
+    save_results(
+        args, probing_acc=avg_cv_acc, probing_loss=avg_cv_loss, ooo_choices=ooo_choices
+    )
 
     out_path = os.path.join(
         args.probing_root,
@@ -444,8 +448,9 @@ if __name__ == "__main__":
 
     if optim_cfg["use_bias"]:
         with open(os.path.join(out_path, "transform.npz"), "wb") as f:
-            np.savez_compressed(file=f, weights=transform["weights"], bias=transform["bias"])
+            np.savez_compressed(
+                file=f, weights=transform["weights"], bias=transform["bias"]
+            )
     else:
-       with open(os.path.join(out_path, "transform.npz"), "wb") as f:
-           np.savez_compressed(file=f, weights=transform["weights"])
-
+        with open(os.path.join(out_path, "transform.npz"), "wb") as f:
+            np.savez_compressed(file=f, weights=transform["weights"])

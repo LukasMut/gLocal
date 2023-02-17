@@ -14,8 +14,8 @@ import torch
 from ml_collections import config_dict
 from thingsvision import get_extractor
 from thingsvision.utils.data import DataLoader
-from tqdm import tqdm
 from torch.utils.data import Subset
+from tqdm import tqdm
 
 import utils
 from data import DATASETS, load_dataset

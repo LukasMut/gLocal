@@ -1,26 +1,25 @@
 import argparse
+import copy
 import os
 import pickle
-import copy
 import warnings
 from datetime import datetime
+from functools import partial
+from multiprocessing import Pool, get_context
 from typing import Any, List, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn.functional as F
 from ml_collections import config_dict
 from sklearn.linear_model import LogisticRegressionCV
-from sklearn.neighbors import KNeighborsRegressor
 from sklearn.metrics import accuracy_score, make_scorer
+from sklearn.neighbors import KNeighborsRegressor
 from thingsvision import get_extractor
 from torchvision.datasets import CIFAR100, DTD
-import torch.nn.functional as F
-from functools import partial
-
-from multiprocessing import get_context, Pool
-
 from tqdm import tqdm
+
 import utils
 from main_model_sim_eval import get_module_names
 
