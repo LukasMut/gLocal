@@ -79,7 +79,7 @@ def parseargs():
         type=float,
         default=1e-3,
         help="Relative contribution of the regularization term",
-        choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+        choices=[1e+3, 1e+2, 1e+1, 1., 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
     )
     aa(
         "--sigma",
@@ -93,7 +93,7 @@ def parseargs():
         type=int,
         default=256,
         help="Use power of 2 for running optimization on GPU",
-        choices=[64, 128, 256, 512, 1024],
+        choices=[64, 128, 256, 512, 1024, 2048],
     )
     aa(
         "--epochs",
@@ -113,7 +113,7 @@ def parseargs():
         help="number of checks with no improvement after which training will be stopped",
         default=10,
     )
-    aa("--device", type=str, default="cpu", choices=["cpu", "gpu"])
+    aa("--device", type=str, default="gpu", choices=["cpu", "gpu"])
     aa(
         "--num_processes",
         type=int,

@@ -97,7 +97,7 @@ def parseargs():
     aa(
         "--tau",
         type=float,
-        default=1,
+        default=.1,
         help="temperature value for contrastive learning objective",
     )
     aa(
@@ -105,7 +105,7 @@ def parseargs():
         type=float,
         default=1e-3,
         help="Relative contribution of the l2 or identity regularization term",
-        choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+        choices=[1e+3, 1e+2, 1e+1, 1., 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
     )
     aa(
         "--sigma",
