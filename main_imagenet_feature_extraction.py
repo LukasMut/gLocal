@@ -104,8 +104,12 @@ def load_extractor(model_cfg: Dict[str, str]) -> Any:
 
 def save_features(features: Tensor, out_path: str, split: str) -> None:
     """Save ImageNet features as single PyTorch tensors to disk."""
+    split_path = os.path.join(out_path, split)
+    if not os.path.exists(out_path):
+        print("\nCreating output directory for saving ImageNet features...\n")
+        os.makedirs(out_path, exist_ok=True)
     for i, x in tqdm(enumerate(features, start=1), desc="Features"):
-        torch.save(x, os.path.join(out_path, split, f"imagenet_features_{i:07d}.pt"))
+        torch.save(x, os.path.join(split_path, f"imagenet_features_{i:07d}.pt"))
 
 
 def extract(
@@ -174,6 +178,9 @@ if __name__ == "__main__":
     args = parseargs()
     model_cfg = create_model_config(args)
     out_path = os.path.join(args.out_path, model_cfg["source"], model_cfg["model"], args.module)
+    if not os.path.exists(out_path):
+        print("\nCreating output directory for saving ImageNet features...\n")
+        os.makedirs(out_path, exist_ok=True)
     extract(
         imagenet_root=args.imagenet_root,
         model_cfg=model_cfg,
