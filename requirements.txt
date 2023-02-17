@@ -2,10 +2,10 @@ matplotlib==3.5.*
 seaborn==0.11.*
 numpy==1.22.*
 Pillow==9.1.*
-torch==1.13.*
+torch==1.13.1
 pandas==1.4.*
 torchvision==0.13.0
-thingsvision==2.2.21
+thingsvision==2.2.22
 functorch==0.2.*
 tqdm==4.64.0
 pytorch_lightning==1.8.*
