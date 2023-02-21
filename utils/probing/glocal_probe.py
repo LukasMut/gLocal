@@ -88,7 +88,7 @@ class GlocalProbe(pl.LightningModule):
         (
             normalized_teacher_imagenet_features,
             normalized_student_imagenet_features,
-        ) = self.normalize_features(imagenet_features)
+        ) = self.normalize_features(imagenet_features.to(torch.float))
         teacher_similarities = (
             normalized_teacher_imagenet_features
             @ normalized_teacher_imagenet_features.T

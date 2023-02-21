@@ -423,11 +423,11 @@ def run(
             )
     """
     imagenet_train_set = ImageFolder(
-        os.path.join(imagenet_root, "train_set"),
+        os.path.joint(imagenet_root, "train_set"),
         extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
     imagenet_val_set = ImageFolder(
-        os.path.join(imagenet_root, "val_set"),
+        os.path.joint(imagenet_root, "val_set"),
         extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
     triplets = utils.probing.load_triplets(data_root)
