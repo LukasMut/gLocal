@@ -464,18 +464,19 @@ def run(
             dataset=imagenet_train_set,
             batch_size=optim_cfg["contrastive_batch_size"],
             train=True,
-            num_workers=16,
+            num_workers=8,
         )
         val_batches_things = get_batches(
             dataset=val_triplets,
             batch_size=optim_cfg["triplet_batch_size"],
             train=False,
+            num_workers=0,
         )
         val_batches_imagenet = get_batches(
             dataset=imagenet_val_set,
             batch_size=optim_cfg["contrastive_batch_size"],
             train=True,
-            num_workers=16,
+            num_workers=8,
         )
         train_batches = utils.probing.zip_batches(
             train_batches_things, train_batches_imagenet
@@ -506,7 +507,7 @@ def run(
             glocal_probe,
             dataloaders=val_batches,
         )
-        predictions = trainer.predict(glocal_probe, dataloaders=val_batches)
+        predictions = trainer.predict(glocal_probe, dataloaders=val_batches_things)
         predictions = torch.cat(predictions, dim=0).tolist()
         ooo_choices.append(predictions)
         cv_results[f"fold_{k:02d}"] = val_performance
