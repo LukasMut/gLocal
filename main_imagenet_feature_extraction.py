@@ -120,7 +120,7 @@ def save_features(features: Tensor, out_path: str, split: str) -> None:
         print("\nCreating output directory for saving ImageNet features...\n")
         os.makedirs(out_path, exist_ok=True)
     for i, x in tqdm(enumerate(features, start=1), desc="Features"):
-        torch.save(x, os.path.join(split_path, f"imagenet_features_{i:07d}.pt"))
+        torch.save(x.clone(), os.path.join(split_path, f"imagenet_features_{i:07d}.pt"))
 
 
 def extract(
