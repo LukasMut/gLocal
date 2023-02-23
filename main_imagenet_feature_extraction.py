@@ -138,7 +138,7 @@ def extract(
 
     for split in splits:
         imagenet_split_set = ImageDataset(
-            os.path.join(imagenet_root, split+"_set"),
+            os.path.join(imagenet_root, split + "_set"),
             out_path=os.path.join(out_path, split),
             backend=extractor.get_backend(),
             transforms=extractor.get_transformations(
@@ -153,12 +153,25 @@ def extract(
             drop_last=False,
             pin_memory=True,
         )
-        features = extractor.extract_features(
-            batches=batches,
-            module_name=model_cfg["module"],
-            flatten_acts=True,
-            output_type="tensor",
-        )
+        if (
+            model_cfg["source"] == "torchvision"
+            and model_cfg["module"] == "penultimate"
+            and model_cfg["model"].startswith("vit")
+        ):
+            features = extractor.extract_features(
+                batches=batches,
+                module_name=model_cfg["module"],
+                flatten_acts=False,
+                output_type="tensor",
+            )
+            features = features[:, 0].copy()
+        else:
+            features = extractor.extract_features(
+                batches=batches,
+                module_name=model_cfg["module"],
+                flatten_acts=True,
+                output_type="tensor",
+            )
         save_features(features, out_path=out_path, split=split)
         del features
 
@@ -167,7 +180,9 @@ if __name__ == "__main__":
     # parse arguments
     args = parseargs()
     model_cfg = create_model_config(args)
-    out_path = os.path.join(args.out_path, model_cfg["source"], model_cfg["model"], args.module)
+    out_path = os.path.join(
+        args.out_path, model_cfg["source"], model_cfg["model"], args.module
+    )
     if not os.path.exists(out_path):
         print("\nCreating output directory for saving ImageNet features...\n")
         os.makedirs(out_path, exist_ok=True)
