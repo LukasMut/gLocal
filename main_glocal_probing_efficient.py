@@ -451,7 +451,7 @@ def run(
             glocal_probe,
             dataloaders=val_batches,
         )
-        predictions = trainer.predict(glocal_probe, dataloaders=val_batches)
+        predictions = trainer.predict(glocal_probe, dataloaders=val_batches_things)
         predictions = torch.cat(predictions, dim=0).tolist()
         ooo_choices.append(predictions)
         cv_results[f"fold_{k:02d}"] = val_performance
