@@ -15,9 +15,9 @@ import torch.nn.functional as F
 from ml_collections import config_dict
 from thingsvision import get_extractor
 from thingsvision.utils.data import DataLoader
+from torch.utils.data import Subset
 from torchvision.transforms import Compose, Lambda
 from tqdm import tqdm
-from torch.utils.data import Subset
 
 import utils
 from data import DATASETS, load_dataset

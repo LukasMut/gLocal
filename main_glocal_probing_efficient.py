@@ -2,7 +2,6 @@ import argparse
 import os
 import pickle
 import warnings
-from random import choices
 from typing import Any, Callable, Dict, Iterator, List, Tuple
 
 import numpy as np
@@ -28,14 +27,9 @@ def parseargs():
         parser.add_argument(*args, **kwargs)
 
     aa("--data_root", type=str, help="path/to/things")
+    aa("--imagenet_features_root", type=str, help="path/to/imagenet/features")
     aa("--dataset", type=str, help="Which dataset to use", default="things")
     aa("--model", type=str)
-    aa(
-        "--model_dict_path",
-        type=str,
-        default="./datasets/things/model_dict.json",
-        help="Path to the model_dict.json",
-    )
     aa(
         "--module",
         type=str,
@@ -64,22 +58,41 @@ def parseargs():
         help="Number of object categories in the data",
         default=1854,
     )
-    aa(
-        "--n_folds",
-        type=int,
-        default=3,
-        choices=[2, 3, 4, 5],
-        help="Number of folds in k-fold cross-validation.",
-    )
     aa("--optim", type=str, default="Adam", choices=["Adam", "AdamW", "SGD"])
-    aa("--learning_rate", type=float, default=1e-3)
+    aa("--learning_rate", type=float, metavar="eta", default=1e-3)
     aa("--regularization", type=str, default="l2", choices=["l2", "eye"])
+    aa(
+        "--alpha",
+        type=float,
+        default=1e-1,
+        help="Relative contribution of the contrastive loss term",
+        choices=[
+            5e-1,
+            4e-1,
+            3e-1,
+            2e-1,
+            1e-1,
+            5e-2,
+            5e-2,
+            4e-2,
+            3e-2,
+            2e-2,
+            1e-2,
+            1e-2,
+        ],
+    )
+    aa(
+        "--tau",
+        type=float,
+        default=1,
+        help="temperature value for contrastive learning objective",
+    )
     aa(
         "--lmbda",
         type=float,
         default=1e-3,
-        help="Relative contribution of the regularization term",
-        choices=[1e+3, 1e+2, 1e+1, 1., 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+        help="Relative contribution of the l2 or identity regularization term",
+        choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
     )
     aa(
         "--sigma",
@@ -89,11 +102,18 @@ def parseargs():
         choices=[1e-1, 1e-2, 1e-3, 1e-4],
     )
     aa(
-        "--batch_size",
+        "--triplet_batch_size",
         type=int,
         default=256,
-        help="Use power of 2 for running optimization on GPU",
-        choices=[64, 128, 256, 512, 1024, 2048],
+        help="Use power of 2 for running optimization process on GPU",
+        choices=[64, 128, 256, 512, 1024],
+    )
+    aa(
+        "--contrastive_batch_size",
+        type=int,
+        default=1024,
+        help="Use power of 2 for running optimization process on GPU",
+        choices=[128, 256, 512, 1024, 2048, 4096],
     )
     aa(
         "--epochs",
@@ -113,11 +133,12 @@ def parseargs():
         help="number of checks with no improvement after which training will be stopped",
         default=10,
     )
-    aa("--device", type=str, default="gpu", choices=["cpu", "gpu"])
+    aa("--device", type=str, default="cpu", choices=["cpu", "gpu"])
     aa(
         "--num_processes",
         type=int,
         default=4,
+        choices=[2, 4, 6, 8, 10, 12],
         help="Number of devices to use for performing distributed training on CPU",
     )
     aa(
@@ -132,15 +153,17 @@ def parseargs():
     return args
 
 
-def create_optimization_config(args) -> Tuple[FrozenDict, FrozenDict]:
+def create_optimization_config(args) -> Dict[str, Any]:
     """Create frozen config dict for optimization hyperparameters."""
     optim_cfg = dict()
     optim_cfg["optim"] = args.optim
     optim_cfg["lr"] = args.learning_rate
     optim_cfg["reg"] = args.regularization
     optim_cfg["lmbda"] = args.lmbda
-    optim_cfg["n_folds"] = args.n_folds
-    optim_cfg["batch_size"] = args.batch_size
+    optim_cfg["alpha"] = args.alpha
+    optim_cfg["tau"] = args.tau
+    optim_cfg["contrastive_batch_size"] = args.contrastive_batch_size
+    optim_cfg["triplet_batch_size"] = args.triplet_batch_size
     optim_cfg["max_epochs"] = args.epochs
     optim_cfg["min_epochs"] = args.burnin
     optim_cfg["patience"] = args.patience
@@ -171,12 +194,14 @@ def get_temperature(
     return temp
 
 
-def get_batches(triplets: Tensor, batch_size: int, train: bool) -> Iterator:
+def get_batches(
+    dataset: Tensor, batch_size: int, train: bool, num_workers: int = 0
+) -> Iterator:
     batches = DataLoader(
-        dataset=triplets,
+        dataset=dataset,
         batch_size=batch_size,
         shuffle=True if train else False,
-        num_workers=0,
+        num_workers=num_workers,
         drop_last=False,
         pin_memory=True if train else False,
     )
@@ -229,10 +254,11 @@ def make_results_df(
     module_name: str,
     source: str,
     reg: str,
-    lmbda: float,
     optim: str,
     lr: float,
-    n_folds: int,
+    alpha: float,
+    lmbda: float,
+    tau: float,
     bias: bool,
 ) -> pd.DataFrame:
     probing_results_current_run = pd.DataFrame(index=range(1), columns=columns)
@@ -244,10 +270,12 @@ def make_results_df(
     probing_results_current_run["family"] = utils.analyses.get_family_name(model_name)
     probing_results_current_run["source"] = source
     probing_results_current_run["reg"] = reg
+    probing_results_current_run["alpha"] = alpha
     probing_results_current_run["lmbda"] = lmbda
+    probing_results_current_run["tau"] = tau
     probing_results_current_run["optim"] = optim.lower()
     probing_results_current_run["lr"] = lr
-    probing_results_current_run["n_folds"] = n_folds
+    probing_results_current_run["contrastive"] = True
     probing_results_current_run["bias"] = bias
     return probing_results_current_run
 
@@ -276,10 +304,11 @@ def save_results(
             module_name=args.module,
             source=args.source,
             reg=args.regularization,
-            lmbda=args.lmbda,
             optim=args.optim,
             lr=args.learning_rate,
-            n_folds=args.n_folds,
+            alpha=args.alpha,
+            lmbda=args.lmbda,
+            tau=args.tau,
             bias=args.use_bias,
         )
         probing_results = pd.concat(
@@ -299,11 +328,13 @@ def save_results(
             "family",
             "source",
             "reg",
-            "lambda",
             "optim",
             "lr",
-            "n_folds",
+            "alpha",
+            "lambda",
+            "tau",
             "bias",
+            "contrastive",
         ]
         probing_results = make_results_df(
             columns=columns,
@@ -314,10 +345,11 @@ def save_results(
             module_name=args.module,
             source=args.source,
             reg=args.regularization,
+            alpha=args.alpha,
             lmbda=args.lmbda,
+            tau=args.tau,
             optim=args.optim,
             lr=args.learning_rate,
-            n_folds=args.n_folds,
             bias=args.use_bias,
         )
         probing_results.to_pickle(os.path.join(out_path, "probing_results.pkl"))
@@ -325,27 +357,33 @@ def save_results(
 
 def run(
     features: Array,
-    model: str,
-    module: str,
+    imagenet_features_root: str,
     data_root: str,
-    config_path: str,
+    optim_cfg: Dict[str, Any],
     n_objects: int,
     device: str,
-    optim_cfg: FrozenDict,
     rnd_seed: int,
     num_processes: int,
 ) -> Tuple[Dict[str, List[float]], Array]:
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
+    imagenet_train_features = utils.probing.Features(
+        root=imagenet_features_root,
+        split="train_set",
+        device=device,
+    )
+    imagenet_val_features = utils.probing.Features(
+        root=imagenet_features_root,
+        split="val",
+        device=device,
+    )
     triplets = utils.probing.load_triplets(data_root)
-    # features -= features.mean(axis=0) # center input features
-    # features = utils.probing.standardize(features) # z-transform / standardize input features
     features = (
         features - features.mean()
-    ) / features.std()  # subtract mean and normalize by standard deviation
+    ) / features.std()  # subtract global mean and normalize by standard deviation of feature matrix
     objects = np.arange(n_objects)
-    # Perform k-fold cross-validation with k = 3 or k = 4
-    kf = KFold(n_splits=optim_cfg["n_folds"], random_state=rnd_seed, shuffle=True)
+    # For glocal optimization, we don't need to perform k-Fold cross-validation (we can simply set k=4 or 5)
+    kf = KFold(n_splits=4, random_state=rnd_seed, shuffle=True)
     cv_results = {}
     ooo_choices = []
     for k, (train_idx, _) in tqdm(enumerate(kf.split(objects), start=1), desc="Fold"):
@@ -363,17 +401,36 @@ def run(
             triplets=triplet_partitioning["val"],
             n_objects=n_objects,
         )
-        train_batches = get_batches(
-            triplets=train_triplets,
-            batch_size=optim_cfg["batch_size"],
+        train_batches_things = get_batches(
+            dataset=train_triplets,
+            batch_size=optim_cfg["triplet_batch_size"],
             train=True,
+            num_workers=0,
         )
-        val_batches = get_batches(
-            triplets=val_triplets,
-            batch_size=optim_cfg["batch_size"],
+        train_batches_imagenet = get_batches(
+            dataset=imagenet_train_features,
+            batch_size=optim_cfg["contrastive_batch_size"],
+            train=True,
+            num_workers=num_processes,
+        )
+        val_batches_things = get_batches(
+            dataset=val_triplets,
+            batch_size=optim_cfg["triplet_batch_size"],
             train=False,
         )
-        linear_probe = utils.probing.GlobalProbe(
+        val_batches_imagenet = get_batches(
+            dataset=imagenet_val_features,
+            batch_size=optim_cfg["contrastive_batch_size"],
+            train=True,
+            num_workers=num_processes,
+        )
+        train_batches = utils.probing.zip_batches(
+            train_batches_things, train_batches_imagenet
+        )
+        val_batches = utils.probing.zip_batches(
+            val_batches_things, val_batches_imagenet
+        )
+        glocal_probe = utils.probing.GlocalFeatureProbe(
             features=features,
             optim_cfg=optim_cfg,
         )
@@ -389,19 +446,20 @@ def run(
             gradient_clip_val=1.0,
             gradient_clip_algorithm="norm",
         )
-        trainer.fit(linear_probe, train_batches, val_batches)
+        trainer.fit(glocal_probe, train_batches, val_batches)
         val_performance = trainer.test(
-            linear_probe,
+            glocal_probe,
             dataloaders=val_batches,
         )
-        predictions = trainer.predict(linear_probe, dataloaders=val_batches)
+        predictions = trainer.predict(glocal_probe, dataloaders=val_batches)
         predictions = torch.cat(predictions, dim=0).tolist()
         ooo_choices.append(predictions)
         cv_results[f"fold_{k:02d}"] = val_performance
+        break
     transformation = {}
-    transformation["weights"] = linear_probe.transform_w.data.detach().cpu().numpy()
+    transformation["weights"] = glocal_probe.transform_w.data.detach().cpu().numpy()
     if optim_cfg["use_bias"]:
-        transformation["bias"] = linear_probe.transform_b.data.detach().cpu().numpy()
+        transformation["bias"] = glocal_probe.transform_b.data.detach().cpu().numpy()
     ooo_choices = np.concatenate(ooo_choices)
     return ooo_choices, cv_results, transformation
 
@@ -416,13 +474,11 @@ if __name__ == "__main__":
     optim_cfg = create_optimization_config(args)
     ooo_choices, cv_results, transform = run(
         features=model_features,
-        model=args.model,
-        module=args.module,
+        imagenet_features_root=args.imagenet_features_root,
         data_root=args.data_root,
-        config_path=args.model_dict_path,
+        optim_cfg=optim_cfg,
         n_objects=args.n_objects,
         device=args.device,
-        optim_cfg=optim_cfg,
         rnd_seed=args.rnd_seed,
         num_processes=args.num_processes,
     )
@@ -438,8 +494,9 @@ if __name__ == "__main__":
         args.source,
         args.model,
         args.module,
-        str(args.n_folds),
+        str(args.alpha),
         str(args.lmbda),
+        str(args.tau),
         args.optim.lower(),
         str(args.learning_rate),
     )
