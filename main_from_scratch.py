@@ -1,7 +1,6 @@
 import argparse
 import os
 import pickle
-import warnings
 from typing import Any, Callable, Dict, Iterator, List, Tuple
 
 import numpy as np
@@ -15,7 +14,10 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 from tqdm import tqdm
 
+import data
 import utils
+
+NUM_WORKERS = 8
 
 Array = np.ndarray
 Tensor = torch.Tensor
@@ -73,72 +75,41 @@ def parseargs():
     )
     aa("--optim", type=str, default="Adam", choices=["Adam", "AdamW", "SGD"])
     aa("--learning_rate", type=float, metavar="eta", default=1e-3)
-    aa("--regularization", type=str, default="l2", choices=["l2", "eye"])
     aa(
         "--alpha",
         type=float,
         default=1e-1,
-        help="Relative contribution of the contrastive loss term",
-        choices=[
-            5e-1,
-            4e-1,
-            3e-1,
-            2e-1,
-            1e-1,
-            5e-2,
-            5e-2,
-            4e-2,
-            3e-2,
-            2e-2,
-            1e-2,
-            1e-2,
-        ],
-    )
-    aa(
-        "--tau",
-        type=float,
-        default=.1,
-        help="temperature value for contrastive learning objective",
+        help="Relative contribution of the classification loss term",
     )
     aa(
         "--lmbda",
         type=float,
-        default=1e-3,
-        help="Relative contribution of the l2 or identity regularization term",
-        choices=[1e+3, 1e+2, 1e+1, 1., 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+        default=0,
+        help="L2 regularization term",
     )
     aa(
-        "--sigma",
+        "--gradient_clip_val",
         type=float,
-        default=1e-3,
-        help="Scalar to scale a neural net's pre-transformed representation space prior to the optimization process",
-        choices=[1e-1, 1e-2, 1e-3, 1e-4],
+        default=1.0,
+        help="Gradient norm clipping value",
     )
     aa(
         "--triplet_batch_size",
         type=int,
         default=256,
         help="Use power of 2 for running optimization process on GPU",
-        choices=[64, 128, 256, 512, 1024],
     )
     aa(
-        "--contrastive_batch_size",
+        "--classification_batch_size",
         type=int,
         default=1024,
         help="Use power of 2 for running optimization process on GPU",
-        choices=[128, 256, 512, 1024, 2048, 4096],
     )
     aa(
         "--epochs",
         type=int,
-        help="Maximum number of epochs to perform finetuning",
+        help="Maximum number of epochs",
         default=100,
-    )
-    aa(
-        "--burnin",
-        type=int,
-        help="Minimum number of epochs to perform finetuning",
-        default=10,
     )
     aa(
         "--patience",
@@ -153,11 +124,6 @@ def parseargs():
         default=4,
         help="Number of devices to use for performing distributed training on CPU",
     )
-    aa(
-        "--use_bias",
-        action="store_true",
-        help="whether to use a bias in the linear probe",
-    )
     aa("--probing_root", type=str, help="path/to/probing")
     aa("--log_dir", type=str, help="directory to checkpoint transformations")
     aa("--rnd_seed", type=int, default=42, help="random seed for reproducibility")
@@ -170,18 +136,13 @@ def create_optimization_config(args) -> Dict[str, Any]:
     optim_cfg = dict()
     optim_cfg["optim"] = args.optim
     optim_cfg["lr"] = args.learning_rate
-    optim_cfg["reg"] = args.regularization
-    optim_cfg["lmbda"] = args.lmbda
     optim_cfg["alpha"] = args.alpha
-    optim_cfg["tau"] = args.tau
-    optim_cfg["contrastive_batch_size"] = args.contrastive_batch_size
+    optim_cfg["lmbda"] = args.lmbda
+    optim_cfg["classification_batch_size"] = args.classification_batch_size
     optim_cfg["triplet_batch_size"] = args.triplet_batch_size
     optim_cfg["max_epochs"] = args.epochs
-    optim_cfg["min_epochs"] = args.burnin
     optim_cfg["patience"] = args.patience
-    optim_cfg["use_bias"] = args.use_bias
     optim_cfg["ckptdir"] = os.path.join(args.log_dir, args.model, args.module)
-    optim_cfg["sigma"] = args.sigma
     return optim_cfg
 
 
@@ -201,20 +162,6 @@ def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str,
     with open(os.path.join(probing_root, subfolder, "features.pkl"), "rb") as f:
         features = pickle.load(f)
     return features
-
-
-def get_temperature(
-    model_config, model: List[str], module: str, objective: str = "cosine"
-) -> List[str]:
-    """Get optimal temperature values for all models."""
-    try:
-        temp = model_config[model][module]["temperature"][objective]
-    except KeyError:
-        temp = 1.0
-        warnings.warn(
-            f"\nMissing temperature value for {model} and {module} layer.\nSetting temperature value to 1.\n"
-        )
-    return temp
 
 
 def get_batches(
@@ -238,7 +185,7 @@ def get_callbacks(optim_cfg: FrozenDict, steps: int = 20) -> List[Callable]:
     checkpoint_callback = ModelCheckpoint(
         monitor="val_loss",
         dirpath=optim_cfg["ckptdir"],
-        filename="ooo-finetuning-epoch{epoch:02d}-val_loss{val/loss:.2f}",
+        filename="from-scratch-epoch{epoch:02d}-val_loss{val/loss:.2f}",
         auto_insert_metric_name=False,
         every_n_epochs=steps,
     )
@@ -254,128 +201,51 @@ def get_callbacks(optim_cfg: FrozenDict, steps: int = 20) -> List[Callable]:
     return callbacks
 
 
-def get_mean_cv_acc(
-    cv_results: Dict[str, List[float]], metric: str = "test_acc"
-) -> float:
-    avg_val_acc = np.mean([vals[0][metric] for vals in cv_results.values()])
-    return avg_val_acc
-
-
-def get_mean_cv_loss(
-    cv_results: Dict[str, List[float]], metric: str = "test_loss"
-) -> float:
-    avg_val_loss = np.mean([vals[0][metric] for vals in cv_results.values()])
-    return avg_val_loss
-
-
-def make_results_df(
-    columns: List[str],
-    probing_acc: float,
-    probing_loss: float,
-    ooo_choices: Array,
-    model_name: str,
-    module_name: str,
-    source: str,
-    reg: str,
-    optim: str,
-    lr: float,
-    alpha: float,
-    lmbda: float,
-    tau: float,
-    bias: bool,
-) -> pd.DataFrame:
-    probing_results_current_run = pd.DataFrame(index=range(1), columns=columns)
-    probing_results_current_run["model"] = model_name
-    probing_results_current_run["probing"] = probing_acc
-    probing_results_current_run["cross-entropy"] = probing_loss
-    # probing_results_current_run["choices"] = [ooo_choices]
-    probing_results_current_run["module"] = module_name
-    probing_results_current_run["family"] = utils.analyses.get_family_name(model_name)
-    probing_results_current_run["source"] = source
-    probing_results_current_run["reg"] = reg
-    probing_results_current_run["alpha"] = alpha
-    probing_results_current_run["lmbda"] = lmbda
-    probing_results_current_run["tau"] = tau
-    probing_results_current_run["optim"] = optim.lower()
-    probing_results_current_run["lr"] = lr
-    probing_results_current_run["contrastive"] = True
-    probing_results_current_run["bias"] = bias
-    return probing_results_current_run
+def get_mean_cv_metric(cv_results: Dict[str, List[float]], metric: str) -> float:
+    avg_val = np.mean([vals[0][metric] for vals in cv_results.values()])
+    return avg_val
 
 
 def save_results(
-    args, probing_acc: float, probing_loss: float, ooo_choices: Array
+    args, imgnt_acc: float, imgnt_loss: float, things_acc: float, things_loss: float
 ) -> None:
+    # Create dataframe with results
+    probing_results = {
+        "model": args.model_name,
+        "imagenet_acc": imgnt_acc,
+        "imagenet_loss": imgnt_loss,
+        "things_acc": things_acc,
+        "things_loss": things_loss,
+        "module": args.module,
+        "family": utils.analyses.get_family_name(args.model_name),
+        "source": args.source,
+        "optim": args.optim.lower(),
+        "lr": args.learning_rate,
+        "alpha": args.alpha,
+        "lmbda": args.lmbda,
+    }
+    probing_results = pd.DataFrame({k: {0: v} for k, v in probing_results.items()})
+
+    # Save results to disk
     out_path = os.path.join(args.probing_root, "results")
+    outfile_path = os.path.join(out_path, "fromscratch_results.pkl")
     if not os.path.exists(out_path):
         print("\nCreating results directory...\n")
         os.makedirs(out_path)
-
-    if os.path.isfile(os.path.join(out_path, "probing_results.pkl")):
+    if os.path.isfile(outfile_path):
         print(
             "\nFile for probing results exists.\nConcatenating current results with existing results file...\n"
         )
-        probing_results_overall = pd.read_pickle(
-            os.path.join(out_path, "probing_results.pkl")
-        )
-        probing_results_current_run = make_results_df(
-            columns=probing_results_overall.columns.values,
-            probing_acc=probing_acc,
-            probing_loss=probing_loss,
-            ooo_choices=ooo_choices,
-            model_name=args.model,
-            module_name=args.module,
-            source=args.source,
-            reg=args.regularization,
-            optim=args.optim,
-            lr=args.learning_rate,
-            alpha=args.alpha,
-            lmbda=args.lmbda,
-            tau=args.tau,
-            bias=args.use_bias,
-        )
+        probing_results_overall = pd.read_pickle(outfile_path)
         probing_results = pd.concat(
-            [probing_results_overall, probing_results_current_run],
+            [probing_results_overall, probing_results],
             axis=0,
             ignore_index=True,
         )
-        probing_results.to_pickle(os.path.join(out_path, "probing_results.pkl"))
     else:
         print("\nCreating file for probing results...\n")
-        columns = [
-            "model",
-            "probing",
-            "cross-entropy",
-            # "choices",
-            "module",
-            "family",
-            "source",
-            "reg",
-            "optim",
-            "lr",
-            "alpha",
-            "lambda",
-            "tau",
-            "bias",
-            "contrastive",
-        ]
-        probing_results = make_results_df(
-            columns=columns,
-            probing_acc=probing_acc,
-            probing_loss=probing_loss,
-            ooo_choices=ooo_choices,
-            model_name=args.model,
-            module_name=args.module,
-            source=args.source,
-            reg=args.regularization,
-            alpha=args.alpha,
-            lmbda=args.lmbda,
-            tau=args.tau,
-            optim=args.optim,
-            lr=args.learning_rate,
-            bias=args.use_bias,
-        )
-        probing_results.to_pickle(os.path.join(out_path, "probing_results.pkl"))
+
+    probing_results.to_pickle(outfile_path)
 
 
 def load_extractor(model_cfg: Dict[str, str]) -> Any:
@@ -393,14 +263,13 @@ def load_extractor(model_cfg: Dict[str, str]) -> Any:
         model_name=name,
         source=model_cfg["source"],
         device=model_cfg["device"],
-        pretrained=True,
+        pretrained=False,
         model_parameters=model_params,
     )
     return extractor
 
 
 def run(
-    features: Array,
     imagenet_root: str,
     data_root: str,
     model_cfg: Dict[str, str],
@@ -422,20 +291,18 @@ def run(
             transforms=extractor.get_transformations(resize_dim=256, crop_dim=224) # set input dimensionality to whatever is needed for your pretrained model
             )
     """
+    # TODO: should we use thingsvision here or not? -- we need labels
     imagenet_train_set = ImageFolder(
-        os.path.joint(imagenet_root, "train_set"),
+        os.path.join(imagenet_root, "train_set"),
         extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
     imagenet_val_set = ImageFolder(
-        os.path.joint(imagenet_root, "val_set"),
+        os.path.join(imagenet_root, "val_set"),
         extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
     triplets = utils.probing.load_triplets(data_root)
-    features = (
-        features - features.mean()
-    ) / features.std()  # subtract global mean and normalize by standard deviation of feature matrix
     objects = np.arange(n_objects)
-    # For glocal optimization, we don't need to perform k-Fold cross-validation (we can simply set k=4 or 5)
+    # We don't need to perform k-Fold cross-validation (we can simply set k=4 or 5)
     kf = KFold(n_splits=4, random_state=rnd_seed, shuffle=True)
     cv_results = {}
     ooo_choices = []
@@ -446,6 +313,7 @@ def run(
             triplets=triplets,
             train_objects=train_objects,
         )
+        """
         train_triplets = utils.probing.TripletData(
             triplets=triplet_partitioning["train"],
             n_objects=n_objects,
@@ -454,28 +322,36 @@ def run(
             triplets=triplet_partitioning["val"],
             n_objects=n_objects,
         )
+        """
+        # TODO: are those the right transformations? & are we using -aligned- triplets?
+        train_triplets = data.THINGSTriplet(root=data_root, transform=extractor.get_transformations())
+        train_triplets.triplets = np.array(triplet_partitioning["train"])
+        val_triplets = data.THINGSTriplet(root=data_root, transform=extractor.get_transformations())
+        val_triplets.triplets = np.array(triplet_partitioning["val"])
+
         train_batches_things = get_batches(
             dataset=train_triplets,
             batch_size=optim_cfg["triplet_batch_size"],
             train=True,
-            num_workers=0,
+            num_workers=NUM_WORKERS,
         )
         train_batches_imagenet = get_batches(
             dataset=imagenet_train_set,
-            batch_size=optim_cfg["contrastive_batch_size"],
+            batch_size=optim_cfg["classification_batch_size"],
             train=True,
-            num_workers=16,
+            num_workers=NUM_WORKERS,
         )
         val_batches_things = get_batches(
             dataset=val_triplets,
             batch_size=optim_cfg["triplet_batch_size"],
             train=False,
+            num_workers=NUM_WORKERS,
         )
         val_batches_imagenet = get_batches(
             dataset=imagenet_val_set,
-            batch_size=optim_cfg["contrastive_batch_size"],
-            train=True,
-            num_workers=16,
+            batch_size=optim_cfg["classification_batch_size"],
+            train=True,  # TODO ?
+            num_workers=NUM_WORKERS,
         )
         train_batches = utils.probing.zip_batches(
             train_batches_things, train_batches_imagenet
@@ -483,8 +359,7 @@ def run(
         val_batches = utils.probing.zip_batches(
             val_batches_things, val_batches_imagenet
         )
-        glocal_probe = utils.probing.GlocalProbe(
-            features=features,
+        trainable = utils.probing.FromScratch(
             optim_cfg=optim_cfg,
             model_cfg=model_cfg,
             extractor=extractor,
@@ -492,31 +367,32 @@ def run(
         trainer = Trainer(
             accelerator=device,
             callbacks=callbacks,
-            # strategy="ddp_spawn" if device == "cpu" else None,
             strategy="ddp",
             max_epochs=optim_cfg["max_epochs"],
-            min_epochs=optim_cfg["min_epochs"],
             devices=num_processes if device == "cpu" else "auto",
             enable_progress_bar=True,
-            gradient_clip_val=1.0,
+            gradient_clip_val=args.gradient_clip_val,
             gradient_clip_algorithm="norm",
+            precision=16 if device == "gpu" else 32,
         )
-        trainer.fit(glocal_probe, train_batches, val_batches)
+
+        trainer.fit(trainable, train_batches, val_batches)
         val_performance = trainer.test(
-            glocal_probe,
+            trainable,
             dataloaders=val_batches,
         )
-        predictions = trainer.predict(glocal_probe, dataloaders=val_batches)
+        # Reset val batches to get predictions
+        val_batches = utils.probing.zip_batches(
+            val_batches_things, val_batches_imagenet
+        )
+        predictions = trainer.predict(trainable, dataloaders=val_batches)
         predictions = torch.cat(predictions, dim=0).tolist()
         ooo_choices.append(predictions)
         cv_results[f"fold_{k:02d}"] = val_performance
         break
-    transformation = {}
-    transformation["weights"] = glocal_probe.transform_w.data.detach().cpu().numpy()
-    if optim_cfg["use_bias"]:
-        transformation["bias"] = glocal_probe.transform_b.data.detach().cpu().numpy()
+    model = trainable.model
     ooo_choices = np.concatenate(ooo_choices)
-    return ooo_choices, cv_results, transformation
+    return ooo_choices, cv_results, model
 
 
 if __name__ == "__main__":
@@ -524,12 +400,10 @@ if __name__ == "__main__":
     args = parseargs()
     # seed everything for reproducibility of results
     seed_everything(args.rnd_seed, workers=True)
-    features = load_features(args.probing_root)
-    model_features = features[args.source][args.model][args.module]
+    # run optimization
     optim_cfg = create_optimization_config(args)
     model_cfg = create_model_config(args)
-    ooo_choices, cv_results, transform = run(
-        features=model_features,
+    ooo_choices, cv_results, model = run(
         imagenet_root=args.imagenet_root,
         data_root=args.data_root,
         model_cfg=model_cfg,
@@ -539,32 +413,30 @@ if __name__ == "__main__":
         rnd_seed=args.rnd_seed,
         num_processes=args.num_processes,
     )
-    avg_cv_acc = get_mean_cv_acc(cv_results)
-    avg_cv_loss = get_mean_cv_loss(cv_results)
+    avg_cv_imgnt_acc = get_mean_cv_metric(cv_results, "test_imgnt_acc")
+    avg_cv_imgnt_loss = get_mean_cv_metric(cv_results, "test_imgnt_loss")
+    avg_cv_things_acc = get_mean_cv_metric(cv_results, "test_things_acc")
+    avg_cv_things_loss = get_mean_cv_metric(cv_results, "test_things_loss")
+    # save results
     save_results(
-        args, probing_acc=avg_cv_acc, probing_loss=avg_cv_loss, ooo_choices=ooo_choices
+        args,
+        imgnt_acc=avg_cv_imgnt_acc,
+        imgnt_loss=avg_cv_imgnt_loss,
+        things_acc=avg_cv_things_acc,
+        things_loss=avg_cv_things_loss,
     )
-
+    # save model
     out_path = os.path.join(
         args.probing_root,
         "results",
         args.source,
         args.model,
         args.module,
-        str(args.alpha),
         str(args.lmbda),
-        str(args.tau),
         args.optim.lower(),
         str(args.learning_rate),
     )
     if not os.path.exists(out_path):
         os.makedirs(out_path, exist_ok=True)
-
-    if optim_cfg["use_bias"]:
-        with open(os.path.join(out_path, "transform.npz"), "wb") as f:
-            np.savez_compressed(
-                file=f, weights=transform["weights"], bias=transform["bias"]
-            )
-    else:
-        with open(os.path.join(out_path, "transform.npz"), "wb") as f:
-            np.savez_compressed(file=f, weights=transform["weights"])
+    model_save_path = os.path.join(out_path, "model.pt")
+    torch.save(model.state_dict(), model_save_path)

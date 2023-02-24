@@ -5,7 +5,6 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 
-from .contrastive_loss import ContrastiveLoss
 from .triplet_loss import TripletLoss
 
 Tensor = torch.Tensor
@@ -14,48 +13,44 @@ Tensor = torch.Tensor
 class FromScratch(pl.LightningModule):
     def __init__(
         self,
-        features: Tensor,
         optim_cfg: Dict[str, Any],
         model_cfg: Dict[str, str],
         extractor: Any,
     ):
         super().__init__()
-        self.features = torch.nn.Parameter(
-            torch.from_numpy(features).to(torch.float),
-            requires_grad=False,
-        )
-        self.feature_dim = self.features.shape[1]
         self.optim = optim_cfg["optim"]
         self.lr = optim_cfg["lr"]  # learning rate
-        self.reg = optim_cfg["reg"]  # type of regularization
         self.lmbda = optim_cfg["lmbda"]  # strength of regularization
         self.alpha = optim_cfg[
             "alpha"
         ]  # contribution of supervized loss to overall loss
-        self.batch_size = optim_cfg[
-            "batch_size"
-        ]
-        self.max_epochs = optim_cfg[
-            "max_epochs"
-        ]
+        self.classification_batch_size = optim_cfg["classification_batch_size"]
+        self.triplet_batch_size = optim_cfg["triplet_batch_size"]
+        self.max_epochs = optim_cfg["max_epochs"]
         self.module = model_cfg["module"]
         self.model_name = model_cfg["model"]
-        extractor = get_extractor(
-                model_name=self.model_name,
-                source="pytorch",
-                device="cuda",
-                pretrained=False,
-                model_parameters=None,
-        )
         self.model = extractor.model
 
         self.similarity_loss_fun = TripletLoss(temperature=1.0)
         self.classification_loss_fun = torch.nn.CrossEntropyLoss()
 
-    def forward(self, things_batch: Tensor, imagenet_batch: Tensor) -> Tensor:
-        # TODO: use a hook to also enable the use of the penultimate layer
-        things_ebmbeddings = self.model(things_batch)
-        imagenet_logits = self.model(imagenet_batch)
+        # Attach the hook to a named module s.t. we can access it for the similarity loss
+        self.activations = None
+        for name, module in self.model.named_modules():
+            if name == self.module:
+                module.register_forward_hook(self.save_activation())
+                break
+
+    def save_activation(self):
+        def hook(model, input, output):
+            self.activations = output
+
+        return hook
+
+    def forward(self, things_batch: Tensor, imagenet_batch_images: Tensor) -> Tensor:
+        self.model(things_batch)
+        things_ebmbeddings = self.activations
+        imagenet_logits = self.model(imagenet_batch_images)
         return things_ebmbeddings, imagenet_logits
 
     @staticmethod
@@ -81,6 +76,7 @@ class FromScratch(pl.LightningModule):
 
     @staticmethod
     def break_ties(probas: Tensor) -> Tensor:
+        # TODO: move static methods to helpers.py?
         return torch.tensor(
             [
                 -1
@@ -104,62 +100,111 @@ class FromScratch(pl.LightningModule):
         choice_acc = self.accuracy_(probas)
         return choice_acc
 
+    def classification_accuracy(self, logits: Tensor, labels: Tensor) -> float:
+        max_idcs = logits.argmax(dim=1)
+        acc = (max_idcs == labels).sum().item() / len(labels)
+        return acc
+
     @staticmethod
     def unbind(embeddings: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         return torch.unbind(
-            torch.reshape(embeddings, (-1, 3, embeddings.shape[-1])), dim=1
+            torch.reshape(embeddings, (3, -1, *embeddings.shape[1:])),
+        )
+
+    def _step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+        # Run data through model
+        things_batch, imagenet_batch = batch
+        things_batch_images = torch.cat([things_batch[0], things_batch[1], things_batch[2]], dim=0) # should be [bs*3 x 3 x w x h]
+        imagenet_batch_images, imagenet_batch_labels = imagenet_batch
+        things_embeddings, imagenet_logits = self(things_batch_images, imagenet_batch_images)
+        # Calculate similarity loss
+        anchor, positive, negative = self.unbind(things_embeddings) # should be [bs*3 x 3 x w x h] -> 3 x [bs x 3 x w x h]
+        dots = self.compute_similarities(anchor, positive, negative)
+        similarity_loss = self.similarity_loss_fun(dots)
+        similarity_acc = self.choice_accuracy(dots)
+        # Calculate classification loss
+        classification_loss = self.classification_loss_fun(imagenet_logits, imagenet_batch_labels)
+        classification_acc = self.classification_accuracy(imagenet_logits, imagenet_batch_labels)
+        # Combine & log losses
+        loss = (1 - self.alpha) * similarity_loss + self.alpha * classification_loss
+        return (
+            loss,
+            classification_loss,
+            classification_acc,
+            similarity_loss,
+            similarity_acc,
         )
 
     def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
-        things_batch, imagenet_batch = batch
-        images, labels = imagenet_batch
-
-        # TODO: we want to change the "extract_features" method
-        # such that we get back a torch.Tensor rather than a np.ndarray,
-        # because the line below is unncessary computational overhead
-        imagenet_features = torch.from_numpy(imagenet_features)
-        batch_embeddings, teacher_similarities, student_similarities = self(
-            things_batch, imagenet_features
-        )
-        anchor, positive, negative = self.unbind(batch_embeddings)
-        dots = self.compute_similarities(anchor, positive, negative)
-        c_entropy = self.similarity_loss_fun(dots)
-        classification_loss = self.classification_loss_fun(imagenet_logits, labels)
-        loss = c_entropy + self.alpha * locality_loss + self.lmbda * complexity_loss
-        acc = self.choice_accuracy(dots)
-        self.log("train_loss", c_entropy, on_epoch=True)
-        self.log("train_acc", acc, on_epoch=True)
+        (
+            loss,
+            classification_loss,
+            classification_acc,
+            similarity_loss,
+            similarity_acc,
+        ) = self._step(batch, batch_idx)
+        self.log("train_loss", loss, on_epoch=True)
+        self.log("train_imgnt_loss", classification_loss, on_epoch=True)
+        self.log("train_imgnt_acc", classification_acc, on_epoch=True)
+        self.log("train_things_loss", similarity_loss, on_epoch=True)
+        self.log("train_things_acc", similarity_acc, on_epoch=True)
         return loss
 
-    def validation_step(self, things_batch: Tensor, batch_idx: int):
-        loss, acc = self._shared_eval_step(things_batch, batch_idx)
-        metrics = {"val_acc": acc, "val_loss": loss}
+    def validation_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+        (
+            loss,
+            classification_loss,
+            classification_acc,
+            similarity_loss,
+            similarity_acc,
+        ) = self._step(batch, batch_idx)
+        metrics = {
+            "val_loss": loss,
+            "val_imgnt_loss": classification_loss,
+            "val_imgnt_acc": classification_acc,
+            "val_things_loss": similarity_loss,
+            "val_things_acc": similarity_acc,
+        }
         self.log_dict(metrics)
         return metrics
 
-    def test_step(self, things_batch: Tensor, batch_idx: int):
-        loss, acc = self._shared_eval_step(things_batch, batch_idx)
-        metrics = {"test_acc": acc, "test_loss": loss}
+    def test_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+        (
+            loss,
+            classification_loss,
+            classification_acc,
+            similarity_loss,
+            similarity_acc,
+        ) = self._step(batch, batch_idx)
+        metrics = {
+            "test_loss": loss,
+            "test_imgnt_loss": classification_loss,
+            "test_imgnt_acc": classification_acc,
+            "test_things_loss": similarity_loss,
+            "test_things_acc": similarity_acc,
+        }
         self.log_dict(metrics)
         return metrics
 
-    def _shared_eval_step(self, things_batch: Tensor, batch_idx: int):
-        batch_embeddings = self.global_prediction(things_batch)
-        anchor, positive, negative = self.unbind(batch_embeddings)
+    def predict_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+        # TODO: predict imagenet, combine with "self._step"
+        # Run data through model
+        things_batch, imagenet_batch = batch
+        things_batch_images = torch.cat([things_batch[0], things_batch[1], things_batch[2]],
+                                        dim=0)  # should be [bs*3 x 3 x w x h]
+        imagenet_batch_images, imagenet_batch_labels = imagenet_batch
+        things_embeddings, imagenet_logits = self(things_batch_images, imagenet_batch_images)
+        # Calculate similarity loss
+        anchor, positive, negative = self.unbind(things_embeddings)  # should be [bs*3 x 3 x w x h] -> 3 x [bs x 3 x w x h]
         similarities = self.compute_similarities(anchor, positive, negative)
-        loss = self.similarity_loss_fun(similarities)
-        acc = self.choice_accuracy(similarities)
-        return loss, acc
 
-    def predict_step(self, things_batch: Tensor, batch_idx: int):
-        batch_embeddings = self(things_batch)
-        anchor, positive, negative = self.unbind(batch_embeddings)
-        similarities = self.compute_similarities(anchor, positive, negative)
         sim_predictions = torch.argmax(
             F.softmax(torch.stack(similarities, dim=1), dim=1), dim=1
         )
         ooo_predictions = self.convert_predictions(sim_predictions)
         return ooo_predictions
+
+        raise NotImplementedError("This method is not implemented yet.")
 
     def backward(self, loss, optimizer, optimizer_idx):
         loss.backward()
@@ -167,10 +212,17 @@ class FromScratch(pl.LightningModule):
     def configure_optimizers(self):
         if self.optim.lower() == "adam":
             optimizer = getattr(torch.optim, self.optim.capitalize())
-            optimizer = optimizer(self.parameters(), lr=self.lr)
+            optimizer = optimizer(
+                self.model.parameters(), lr=self.lr, weight_decay=self.lmbda
+            )
         elif self.optim.lower() == "sgd":
             optimizer = getattr(torch.optim, self.optim.upper())
-            optimizer = optimizer(self.parameters(), lr=self.lr, momentum=0.9)
+            optimizer = optimizer(
+                self.model.parameters(),
+                lr=self.lr,
+                momentum=0.9,
+                weight_decay=self.lmbda,
+            )
         else:
             raise ValueError(
                 "\nUse Adam or SGD for learning a linear transformation of a network's feature space.\n"
