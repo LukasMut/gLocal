@@ -346,11 +346,11 @@ def create_config_dicts(args) -> Tuple[FrozenDict, FrozenDict]:
 
 def apply_transform(features: Array, transform: Array, things_mean: float, things_std: float, transform_type: str = None):
     features = (features - things_mean) / things_std
-    train_features = features @ transform["weights"]
+    features = features @ transform["weights"]
     if "bias" in transform:
-        train_features += transform["bias"]
-    train_features = torch.from_numpy(train_features)
-    return train_features
+        features += transform["bias"]
+    features = torch.from_numpy(features)
+    return features
 
 def run(
     n_shot: int,
