@@ -88,7 +88,7 @@ class GlocalProbe(pl.LightningModule):
         (
             normalized_teacher_imagenet_features,
             normalized_student_imagenet_features,
-        ) = self.normalize_features(imagenet_features)
+        ) = self.normalize_features(imagenet_features.to(torch.float))
         teacher_similarities = (
             normalized_teacher_imagenet_features
             @ normalized_teacher_imagenet_features.T
@@ -248,8 +248,8 @@ class GlocalProbe(pl.LightningModule):
         acc = self.choice_accuracy(similarities)
         return loss, acc
 
-    def predict_step(self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int):
-        things_objects, (_, _) = batch
+    def predict_step(self, batch: Tensor, batch_idx: int):
+        things_objects = batch
         batch_embeddings = self.global_prediction(things_objects)
         anchor, positive, negative = self.unbind(batch_embeddings)
         similarities = self.compute_similarities(anchor, positive, negative)

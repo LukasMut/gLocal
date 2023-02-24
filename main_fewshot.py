@@ -99,13 +99,10 @@ def parseargs():
     )
     aa(
         "--regressor_type",
-            type=str,
-            nargs="+",
-            choices=[
-                "ridge",
-                "knn"
-            ],
-            help="Few shot model.",
+        type=str,
+        nargs="+",
+        choices=["ridge", "knn"],
+        help="Few shot model.",
     )
     aa(
         "--n_classes",
@@ -247,8 +244,8 @@ def get_features_targets(
 
     if embeddings_root:
         embeddings = utils.evaluation.load_embeddings(
-                embeddings_root=embeddings_root,
-                module="embeddings" if module == "penultimate" else "logits"
+            embeddings_root=embeddings_root,
+            module="embeddings" if module == "penultimate" else "logits",
         )
     else:
         extractor = get_extractor(
@@ -344,6 +341,21 @@ def create_config_dicts(args) -> Tuple[FrozenDict, FrozenDict]:
     return model_cfg, data_cfg
 
 
+def apply_transform(
+    features: Array,
+    transform: Array,
+    things_mean: float,
+    things_std: float,
+    transform_type: str = None,
+):
+    features = (features - things_mean) / things_std
+    features = features @ transform["weights"]
+    if "bias" in transform:
+        features += transform["bias"]
+    features = torch.from_numpy(features)
+    return features
+
+
 def run(
     n_shot: int,
     n_test: int,
@@ -410,25 +422,20 @@ def run(
                         try:
                             transform = transforms[source][model_name][
                                 model_cfg.module_type
-                            ]
+                            ]["weights"]
                         except KeyError:
                             warnings.warn(
                                 message=f"\nCould not find transformation matrix for {model_name}.\nSkipping evaluation for {model_name} and continuing with next model...\n",
                                 category=UserWarning,
                             )
                             continue
-
-                        train_features = (
-                            train_features_original - things_mean
-                        ) / things_std
-                        # train_features = train_features_original
-                        train_features = train_features @ transform
-                        if transform_type == "with_norm":
-                            train_features = torch.from_numpy(train_features)
-                            train_features = (
-                                F.normalize(train_features, dim=1).cpu().numpy()
-                            )
-
+                        train_features = apply_transform(
+                            train_features_original,
+                            transform,
+                            things_mean,
+                            things_std,
+                            transform_type=transform_type,
+                        )
                     else:
                         train_features = train_features_original - things_mean
 
@@ -467,24 +474,20 @@ def run(
                             try:
                                 transform = transforms[source][model_name][
                                     model_cfg.module_type
-                                ]
+                                ]["weights"]
                             except KeyError:
                                 warnings.warn(
                                     message=f"\nCould not find transformation matrix for {model_name}.\nSkipping evaluation for {model_name} and continuing with next model...\n",
                                     category=UserWarning,
                                 )
                                 continue
-
-                            test_features = (
-                                test_features_original - things_mean
-                            ) / things_std
-                            # test_features = test_features_original
-                            test_features = test_features @ transform
-                            if transform_type == "with_norm":
-                                test_features = torch.from_numpy(test_features)
-                                test_features = (
-                                    F.normalize(test_features, dim=1).cpu().numpy()
-                                )
+                            test_features = apply_transform(
+                                test_features_original,
+                                transform,
+                                things_mean,
+                                things_std,
+                                transform_type=transform_type,
+                            )
                         else:
                             test_features = test_features_original - things_mean
 
@@ -565,13 +568,13 @@ if __name__ == "__main__":
     n_shots = args.n_shot
     for regressor_type in regressor_types:
         for shots in n_shots:
-            if regressor_type == "ridge" and shots==1:
+            if regressor_type == "ridge" and shots == 1:
                 continue
             args.n_shot = shots
             args.regressor_type = regressor_type
             model_cfg, data_cfg = create_config_dicts(args)
 
-            if False:#args.device == "cpu":
+            if False:  # args.device == "cpu":
                 model_names = args.model_names
                 sources = args.sources
                 model_cfgs = []
@@ -596,9 +599,7 @@ if __name__ == "__main__":
                     transform_type=args.transform_type,
                     regressor_type=args.regressor_type,
                 )
-                mapp = partial(
-                    _add_model, f=runp
-                )
+                mapp = partial(_add_model, f=runp)
 
                 with get_context("spawn").Pool() as pool:
                     all_results = list(

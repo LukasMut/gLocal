@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import torch
 from thingsvision import get_extractor
@@ -64,6 +64,17 @@ def parseargs():
         help="Number of workers used for loading data",
         choices=[4, 8, 10, 12, 16, 20, 32],
     )
+    aa(
+        "--splits",
+        type=str,
+        default=["train", "val"],
+        nargs="+",
+        help="Which splits to extract features for",
+        choices=[
+            "train",
+            "val",
+        ],
+    )
     aa("--device", type=str, default="cuda", choices=["cpu", "cuda"])
     args = parser.parse_args()
     return args
@@ -109,7 +120,7 @@ def save_features(features: Tensor, out_path: str, split: str) -> None:
         print("\nCreating output directory for saving ImageNet features...\n")
         os.makedirs(out_path, exist_ok=True)
     for i, x in tqdm(enumerate(features, start=1), desc="Features"):
-        torch.save(x, os.path.join(split_path, f"imagenet_features_{i:07d}.pt"))
+        torch.save(x.clone(), os.path.join(split_path, f"imagenet_features_{i:07d}.pt"))
 
 
 def extract(
@@ -118,66 +129,60 @@ def extract(
     batch_size: int,
     num_workers: int,
     out_path: str,
-    resize_dim: 256,
-    crop_dim: 224,
+    splits: List[str],
+    resize_dim: int = 256,
+    crop_dim: int = 224,
 ) -> None:
     """Run extraction pipeline."""
     extractor = load_extractor(model_cfg)
-    imagenet_train_set = ImageDataset(
-        os.path.join(imagenet_root, "train_set"),
-        out_path=os.path.join(out_path, "train"),
-        backend=extractor.get_backend(),
-        transforms=extractor.get_transformations(
-            resize_dim=resize_dim, crop_dim=crop_dim
-        ),
-    )
-    imagenet_val_set = ImageDataset(
-        os.path.join(imagenet_root, "val_set"),
-        out_path=os.path.join(out_path, "val"),
-        backend=extractor.get_backend(),
-        transforms=extractor.get_transformations(
-            resize_dim=resize_dim, crop_dim=crop_dim
-        ),
-    )
-    train_batches = DataLoader(
-        dataset=imagenet_train_set,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        drop_last=False,
-        pin_memory=True,
-    )
-    val_batches = DataLoader(
-        dataset=imagenet_val_set,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        drop_last=False,
-        pin_memory=True,
-    )
-    train_features = extractor.extract_features(
-        batches=train_batches,
-        module_name=model_cfg["module"],
-        flatten_acts=True,
-        output_type="tensor",
-    )
-    save_features(train_features, out_path=out_path, split="train")
-    del train_features
-    val_features = extractor.extract_features(
-        batches=val_batches,
-        module_name=model_cfg["module"],
-        flatten_acts=True,
-        output_type="tensor",
-    )
-    save_features(val_features, out_path=out_path, split="val")
-    del val_features
+
+    for split in splits:
+        imagenet_split_set = ImageDataset(
+            os.path.join(imagenet_root, split + "_set"),
+            out_path=os.path.join(out_path, split),
+            backend=extractor.get_backend(),
+            transforms=extractor.get_transformations(
+                resize_dim=resize_dim, crop_dim=crop_dim
+            ),
+        )
+        batches = DataLoader(
+            dataset=imagenet_split_set,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            drop_last=False,
+            pin_memory=True,
+        )
+        if (
+            model_cfg["source"] == "torchvision"
+            and model_cfg["module"] == "penultimate"
+            and model_cfg["model"].startswith("vit")
+        ):
+            features = extractor.extract_features(
+                batches=batches,
+                module_name=model_cfg["module"],
+                flatten_acts=False,
+                output_type="tensor",
+            )
+            features = features[:, 0].copy()
+        else:
+            features = extractor.extract_features(
+                batches=batches,
+                module_name=model_cfg["module"],
+                flatten_acts=True,
+                output_type="tensor",
+            )
+        save_features(features, out_path=out_path, split=split)
+        del features
 
 
 if __name__ == "__main__":
     # parse arguments
     args = parseargs()
     model_cfg = create_model_config(args)
-    out_path = os.path.join(args.out_path, model_cfg["source"], model_cfg["model"], args.module)
+    out_path = os.path.join(
+        args.out_path, model_cfg["source"], model_cfg["model"], args.module
+    )
     if not os.path.exists(out_path):
         print("\nCreating output directory for saving ImageNet features...\n")
         os.makedirs(out_path, exist_ok=True)
@@ -187,4 +192,5 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         out_path=out_path,
+        splits=args.splits,
     )
