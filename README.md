@@ -100,4 +100,36 @@ $ python main_model_sim_eval.py --data_root /path/to/data/name \
 --rnd_seed 42 \
 ```
 
-## Plot Results
+
+## Downstream Task Evaluations
+We evaluate the transformation matrix obtained by probing on the Things task on various downstream tasks.
+
+### CLIP Retrieval
+We evaluate text -> image retrieval on the Flickr30K dataset. 
+To compute the embeddings for all CLIP models, run:
+
+```bash
+python main_retrieval_init.py --embeddings_dir /home/space/datasets/things/downstream/clip-retrieval/retrieval_embeddings \
+                              --data_root /home/space/datasets/things/downstream/clip-retrieval/flickr30k_images
+```
+(The embeddings are already computed on the TU cluster, so no need to run this step when working on the TU Cluster)
+
+To evaluate the embeddings with and without transforms:
+
+```bash
+python main_retrieval_eval.py --out retrieval_results.csv \
+                              --update_transforms \
+                              --embeddings_dir /home/space/datasets/things/downstream/clip-retrieval/retrieval_embeddings \
+                              --data_root /home/space/datasets/things/downstream/clip-retrieval/flickr30k_images
+```
+`--concat_weight` can be used to concat the transformed and normal embeddings and weigh the transformed ones.
+`--transform_path` can be used to change the path from which the transformation matrices are loaded.
+
+
+
+
+
+
+
+
+
