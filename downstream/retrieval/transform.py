@@ -13,12 +13,16 @@ class ThingsFeatureTransform:
         with open(things_features_path, "rb") as f:
             self.things_features = pickle.load(f)
 
-    def transform_features(self, features, source='custom', model_name='clip_ViT-B/16',
-                           module='penultimate',
-                           interpolation_alpha=1.0):
+    def transform_features(self, features, source='custom', model_name='clip_ViT-B/16', module='penultimate'):
         transform = self.transforms[source][model_name][module]
         things_features_current_model = self.things_features[source][model_name][module]
-        features = (features - things_features_current_model.mean()) / things_features_current_model.std()
-        transform = transform * interpolation_alpha + (1 - interpolation_alpha) * np.eye(transform.shape[0])
-        features = features @ transform
+        things_mean = things_features_current_model.mean()
+        things_std = things_features_current_model.std()
+        features = (features - things_mean) / things_std
+        if 'weights' in transform:
+            features = features @ transform["weights"]
+            if "bias" in transform:
+                features += transform["bias"]
+        else:
+            features = features @ transform
         return features

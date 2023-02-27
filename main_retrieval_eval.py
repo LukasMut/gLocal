@@ -9,11 +9,11 @@ from downstream.retrieval.transform import ThingsFeatureTransform
 from downstream.retrieval import CLIP_MODELS, CLIP_MODEL_MAPPING
 
 
-def evaluate_normal_vs_transformed(embeddings_dir, data_root, update_transforms=False,
+def evaluate_normal_vs_transformed(embeddings_dir, data_root, transform_path, update_transforms=False,
                                    concat_weight=None):
     all_results = []
     if update_transforms:
-        things_feature_transform = ThingsFeatureTransform()
+        things_feature_transform = ThingsFeatureTransform(transform_path=transform_path)
     for model_name in tqdm(CLIP_MODELS):
         embeddings = np.load(os.path.join(embeddings_dir, f'{model_name}.npz'))
         text = torch.tensor(embeddings['text'])
@@ -57,13 +57,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--embeddings_dir')
     parser.add_argument('--update_transforms', action='store_true')
-    parser.add_argument('--concat-weight', type=float)
+    parser.add_argument('--concat-weight', type=float, default=None,
+                        help='Off by default. Set to a weighing factor to concat embeddings and weigh by the '
+                                    'factor')
     parser.add_argument('--data_root', default='resources/flickr30k_images')
+    parser.add_argument('--transform_path',
+                        default='/home/space/datasets/things/transforms/transforms_without_norm.pkl')
     parser.add_argument('--out')
     args = parser.parse_args()
 
     results_df = evaluate_normal_vs_transformed(embeddings_dir=args.embeddings_dir,
                                                 update_transforms=args.update_transforms,
                                                 concat_weight=args.concat_weight,
-                                                data_root=args.data_root)
+                                                data_root=args.data_root,
+                                                transform_path=args.transform_path)
     results_df.to_csv(args.out, index=False)

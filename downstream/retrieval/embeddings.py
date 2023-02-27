@@ -89,7 +89,9 @@ def compute_embeddings(model_name, data_root, embeddings_folder, device='cuda'):
     model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained='openai')
     model = model.to(device)
     tokenizer = open_clip.get_tokenizer(model_name)
-    image_embeddings = compute_image_embeddings(model, data_root, device=device)
-    text_embeddings = compute_text_embeddings(model, tokenizer, data_root, device=device)
+    image_embeddings = compute_image_embeddings(model=model, preprocess=preprocess,
+                                                data_root=data_root, device=device)
+    text_embeddings = compute_text_embeddings(model=model, tokenizer=tokenizer, data_root=data_root,
+                                              device=device)
     np.savez(os.path.join(embeddings_folder, f'{model_name}.npz'),
              images=image_embeddings, text=text_embeddings)
