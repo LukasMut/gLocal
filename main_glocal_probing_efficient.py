@@ -362,6 +362,36 @@ def save_results(
         probing_results.to_pickle(os.path.join(out_path, "probing_results.pkl"))
 
 
+def get_imagenet_features(root: str, format: str, device: str):
+    if format == "hdf":
+        imagenet_train_features = utils.probing.FeaturesHDF5(
+            root=root,
+            split="train_set",
+            device=device,
+        )
+        imagenet_val_features = utils.probing.FeaturesHDF5(
+            root=root,
+            split="val",
+            device=device,
+        )
+    elif format == "pt":
+        imagenet_train_features = utils.probing.FeaturesPT(
+            root=root,
+            split="train_set",
+            device=device,
+        )
+        imagenet_val_features = utils.probing.FeaturesPT(
+            root=root,
+            split="val",
+            device=device,
+        )
+    else:
+        raise ValueError(
+            "\nCan only create dataset for features that were saved in either 'pt' or 'hdf5' format.\n"
+        )
+    return imagenet_train_features, imagenet_val_features
+
+
 def run(
     features: Array,
     imagenet_features_root: str,
@@ -375,32 +405,8 @@ def run(
 ) -> Tuple[Dict[str, List[float]], Array]:
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
-    if features_format == "hdf":
-        imagenet_train_features = utils.probing.FeaturesHDF5(
-            root=imagenet_features_root,
-            split="train_set",
-            device=device,
-        )
-        imagenet_val_features = utils.probing.FeaturesHDF5(
-            root=imagenet_features_root,
-            split="val",
-            device=device,
-        )
-    elif features_format == "pt":
-        imagenet_train_features = utils.probing.FeaturesPT(
-            root=imagenet_features_root,
-            split="train_set",
-            device=device,
-        )
-        imagenet_val_features = utils.probing.FeaturesPT(
-            root=imagenet_features_root,
-            split="val",
-            device=device,
-        )
-    else:
-        raise ValueError(
-            "\nCan only create dataset for features that were saved in either 'pt' or 'hdf5' format.\n"
-        )
+    imagenet_train_features, imagenet_val_features = get_imagenet_features(
+        root=imagenet_features_root, format=features_format, device=device)
     triplets = utils.probing.load_triplets(data_root)
     features = (
         features - features.mean()
