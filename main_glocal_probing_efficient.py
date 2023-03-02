@@ -135,6 +135,13 @@ def parseargs():
     )
     aa("--device", type=str, default="cpu", choices=["cpu", "gpu"])
     aa(
+        "--features_type",
+        type=str,
+        default="hdf5",
+        help="In which data format ImageNet features have been saved to disk",
+        choices=["hdf5", "pt"],
+    )
+    aa(
         "--num_processes",
         type=int,
         default=4,
@@ -364,19 +371,36 @@ def run(
     device: str,
     rnd_seed: int,
     num_processes: int,
+    features_type: str,
 ) -> Tuple[Dict[str, List[float]], Array]:
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
-    imagenet_train_features = utils.probing.Features(
-        root=imagenet_features_root,
-        split="train_set",
-        device=device,
-    )
-    imagenet_val_features = utils.probing.Features(
-        root=imagenet_features_root,
-        split="val",
-        device=device,
-    )
+    if features_type == "hdf":
+        imagenet_train_features = utils.probing.FeaturesHDF5(
+            root=imagenet_features_root,
+            split="train_set",
+            device=device,
+        )
+        imagenet_val_features = utils.probing.FeaturesHDF5(
+            root=imagenet_features_root,
+            split="val",
+            device=device,
+        )
+    elif features_type == "pt":
+        imagenet_train_features = utils.probing.FeaturesPT(
+            root=imagenet_features_root,
+            split="train_set",
+            device=device,
+        )
+        imagenet_val_features = utils.probing.FeaturesPT(
+            root=imagenet_features_root,
+            split="val",
+            device=device,
+        )
+    else:
+        raise ValueError(
+            "\nCan only create dataset for features that were saved in either 'pt' or 'hdf5' format.\n"
+        )
     triplets = utils.probing.load_triplets(data_root)
     features = (
         features - features.mean()
@@ -481,6 +505,7 @@ if __name__ == "__main__":
         device=args.device,
         rnd_seed=args.rnd_seed,
         num_processes=args.num_processes,
+        features_type=args.features_type,
     )
     avg_cv_acc = get_mean_cv_acc(cv_results)
     avg_cv_loss = get_mean_cv_loss(cv_results)
