@@ -66,7 +66,7 @@ def parseargs():
         choices=[4, 8, 10, 12, 16, 20, 32],
     )
     aa(
-        "--out_type",
+        "--out_format",
         type=str,
         default="hdf5",
         help="With which data type ImageNet feature matrices should be saved to disk",
@@ -138,7 +138,7 @@ def extract(
     num_workers: int,
     out_path: str,
     splits: List[str],
-    out_type: str,
+    out_format: str,
     resize_dim: int = 256,
     crop_dim: int = 224,
 ) -> None:
@@ -147,7 +147,7 @@ def extract(
 
     for split in splits:
         imagenet_split_set = ImageDataset(
-            os.path.join(imagenet_root, split + "_set"),
+            os.path.join(imagenet_root, '_'.join((split, "set"))),
             out_path=os.path.join(out_path, split),
             backend=extractor.get_backend(),
             transforms=extractor.get_transformations(
@@ -181,13 +181,13 @@ def extract(
                 flatten_acts=True,
                 output_type="tensor",
             )
-        if out_type == "pt":
+        if out_format == "pt":
             save_features_sequentially(features, out_path=out_path, split=split)
-        elif out_type == "hdf5":
+        elif out_format == "hdf5":
             save_features(
                 features.cpu().numpy(),
                 out_path=os.path.join(out_path, split),
-                file_format=out_type,
+                file_format=out_format,
             )
         else:
             raise ValueError(
@@ -213,5 +213,5 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
         out_path=out_path,
         splits=args.splits,
-        out_type=args.out_type,
+        out_format=args.out_format,
     )
