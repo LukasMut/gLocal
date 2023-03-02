@@ -126,6 +126,12 @@ python main_retrieval_eval.py --out retrieval_results.csv \
 `--transform_path` can be used to change the path from which the transformation matrices are loaded.
 
 
+## Plot Results
+The results from the paper `Human alignment of neural network representations` can be plotted with the `plot_results.py`
+script.
+
+Further, there is now a jupyter notebook with plotting utils: `plotting.ipynb`.
+
 
 
 
