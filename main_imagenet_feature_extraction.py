@@ -185,11 +185,13 @@ def extract(
             save_features_sequentially(features, out_path=out_path, split=split)
         elif out_type == "hdf5":
             save_features(
-                features, out_path=os.path.join(out_path, split), file_format=out_type
+                features.cpu().numpy(),
+                out_path=os.path.join(out_path, split),
+                file_format=out_type,
             )
         else:
             raise ValueError(
-                "\nData type for saving features to disk must be set to 'pt' or 'hdf5'.\n"
+                "\nData type for saving features to disk must be set to either 'pt' or 'hdf5'.\n"
             )
         del features
 
