@@ -1,13 +1,14 @@
 import os
 
+import h5py
 import torch
 
 Tensor = torch.Tensor
 
 
-class Features(torch.utils.data.Dataset):
+class FeaturesPT(torch.utils.data.Dataset):
     def __init__(self, root: str, split: str = "train", device: str = "cuda") -> None:
-        super(Features, self).__init__()
+        super(FeaturesPT, self).__init__()
         self.root = root
         self.split = split
         self.device = torch.device(device)
@@ -21,6 +22,26 @@ class Features(torch.utils.data.Dataset):
 
     def __getitem__(self, idx: int) -> Tensor:
         return torch.load(self.feature_order[idx], map_location=self.device)
+
+    def __len__(self) -> int:
+        return len(self.feature_order)
+
+
+class FeaturesHDF5(torch.utils.data.Dataset):
+    def __init__(self, root: str, split: str = "train", device: str = "cuda") -> None:
+        super(FeaturesHDF5, self).__init__()
+        self.root = root
+        self.split = split
+        self.device = torch.device(device)
+        self.h5py_view = h5py.File(
+            os.path.join(self.root, self.split, "features.hdf5"), "r"
+        )
+        self.h5py_key = list(self.h5py_view.keys()).pop()
+
+    def __getitem__(self, idx: int) -> Tensor:
+        features = self.h5py_view[self.h5py_key][idx]
+        features = torch.from_numpy(features).to(self.device)
+        return features
 
     def __len__(self) -> int:
         return len(self.feature_order)

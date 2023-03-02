@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 import torch
 from thingsvision import get_extractor
 from thingsvision.utils.data import ImageDataset
+from thingsvision.utils.storing import save_features
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -65,6 +66,13 @@ def parseargs():
         choices=[4, 8, 10, 12, 16, 20, 32],
     )
     aa(
+        "--out_type",
+        type=str,
+        default="hdf5",
+        help="With which data type ImageNet feature matrices should be saved to disk",
+        choices=["hdf5", "pt"],
+    )
+    aa(
         "--splits",
         type=str,
         default=["train", "val"],
@@ -113,12 +121,12 @@ def load_extractor(model_cfg: Dict[str, str]) -> Any:
     return extractor
 
 
-def save_features(features: Tensor, out_path: str, split: str) -> None:
+def save_features_sequentially(features: Tensor, out_path: str, split: str) -> None:
     """Save ImageNet features as single PyTorch tensors to disk."""
     split_path = os.path.join(out_path, split)
-    if not os.path.exists(out_path):
+    if not os.path.exists(split_path):
         print("\nCreating output directory for saving ImageNet features...\n")
-        os.makedirs(out_path, exist_ok=True)
+        os.makedirs(split_path, exist_ok=True)
     for i, x in tqdm(enumerate(features, start=1), desc="Features"):
         torch.save(x.clone(), os.path.join(split_path, f"imagenet_features_{i:07d}.pt"))
 
@@ -130,6 +138,7 @@ def extract(
     num_workers: int,
     out_path: str,
     splits: List[str],
+    out_type: str,
     resize_dim: int = 256,
     crop_dim: int = 224,
 ) -> None:
@@ -172,7 +181,16 @@ def extract(
                 flatten_acts=True,
                 output_type="tensor",
             )
-        save_features(features, out_path=out_path, split=split)
+        if out_type == "pt":
+            save_features_sequentially(features, out_path=out_path, split=split)
+        elif out_type == "hdf5":
+            save_features(
+                features, out_path=os.path.join(out_path, split), file_format=out_type
+            )
+        else:
+            raise ValueError(
+                "\nData type for saving features to disk must be set to 'pt' or 'hdf5'.\n"
+            )
         del features
 
 
@@ -193,4 +211,5 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
         out_path=out_path,
         splits=args.splits,
+        out_type=args.out_type,
     )
