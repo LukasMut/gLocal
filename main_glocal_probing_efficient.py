@@ -135,7 +135,7 @@ def parseargs():
     )
     aa("--device", type=str, default="cpu", choices=["cpu", "gpu"])
     aa(
-        "--features_type",
+        "--features_format",
         type=str,
         default="hdf5",
         help="In which data format ImageNet features have been saved to disk",
@@ -371,11 +371,11 @@ def run(
     device: str,
     rnd_seed: int,
     num_processes: int,
-    features_type: str,
+    features_format: str,
 ) -> Tuple[Dict[str, List[float]], Array]:
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
-    if features_type == "hdf":
+    if features_format == "hdf":
         imagenet_train_features = utils.probing.FeaturesHDF5(
             root=imagenet_features_root,
             split="train_set",
@@ -386,7 +386,7 @@ def run(
             split="val",
             device=device,
         )
-    elif features_type == "pt":
+    elif features_format == "pt":
         imagenet_train_features = utils.probing.FeaturesPT(
             root=imagenet_features_root,
             split="train_set",
@@ -461,8 +461,8 @@ def run(
         trainer = Trainer(
             accelerator=device,
             callbacks=callbacks,
-            # strategy="ddp_spawn" if device == "cpu" else None,
-            strategy="ddp",
+            strategy="ddp_spawn" if device == "cpu" else None,
+            # strategy="ddp",
             max_epochs=optim_cfg["max_epochs"],
             min_epochs=optim_cfg["min_epochs"],
             devices=num_processes if device == "cpu" else "auto",
@@ -505,7 +505,7 @@ if __name__ == "__main__":
         device=args.device,
         rnd_seed=args.rnd_seed,
         num_processes=args.num_processes,
-        features_type=args.features_type,
+        features_format=args.features_format,
     )
     avg_cv_acc = get_mean_cv_acc(cv_results)
     avg_cv_loss = get_mean_cv_loss(cv_results)
