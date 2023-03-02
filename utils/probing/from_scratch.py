@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Tuple
+import pdb
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 import pytorch_lightning as pl
@@ -32,7 +33,7 @@ class FromScratch(pl.LightningModule):
         self.model = extractor.model
 
         self.similarity_loss_fun = TripletLoss(temperature=1.0)
-        self.classification_loss_fun = torch.nn.CrossEntropyLoss()
+        self.classification_loss_fun = torch.nn.CrossEntropyLoss(label_smoothing=optim_cfg["label_smoothing"])
 
         # Attach the hook to a named module s.t. we can access it for the similarity loss
         self.activations = None
@@ -47,7 +48,7 @@ class FromScratch(pl.LightningModule):
 
         return hook
 
-    def forward(self, things_batch: Tensor, imagenet_batch_images: Tensor) -> Tensor:
+    def forward(self, things_batch: Tensor, imagenet_batch_images: Tensor) -> Tuple[Tensor, Tensor]:
         self.model(things_batch)
         things_ebmbeddings = self.activations
         imagenet_logits = self.model(imagenet_batch_images)
@@ -72,7 +73,7 @@ class FromScratch(pl.LightningModule):
         sim_i = torch.sum(anchor * positive, dim=1)
         sim_j = torch.sum(anchor * negative, dim=1)
         sim_k = torch.sum(positive * negative, dim=1)
-        return (sim_i, sim_j, sim_k)
+        return sim_i, sim_j, sim_k
 
     @staticmethod
     def break_ties(probas: Tensor) -> Tensor:
@@ -82,7 +83,7 @@ class FromScratch(pl.LightningModule):
                 -1
                 if (
                     torch.unique(pmf).shape[0] != pmf.shape[0]
-                    or torch.unique(pmf.round(decimals=2)).shape[0] == 1
+                    or torch.unique(pmf.round(decimals=3)).shape[0] == 1
                 )
                 else torch.argmax(pmf)
                 for pmf in probas
@@ -91,13 +92,13 @@ class FromScratch(pl.LightningModule):
 
     def accuracy_(self, probas: Tensor, batching: bool = True) -> Tensor:
         choices = self.break_ties(probas)
-        argmax = np.where(choices == 0, 1, 0)
+        argmax = torch.where(choices == 0, 1., 0.)
         acc = argmax.mean() if batching else argmax.tolist()
         return acc
 
-    def choice_accuracy(self, similarities: float) -> float:
+    def choice_accuracy(self, similarities: Union[Tuple[Tensor],List[Tensor]]) -> float:
         probas = F.softmax(torch.stack(similarities, dim=-1), dim=1)
-        choice_acc = self.accuracy_(probas)
+        choice_acc = float(self.accuracy_(probas))
         return choice_acc
 
     def classification_accuracy(self, logits: Tensor, labels: Tensor) -> float:
@@ -106,27 +107,40 @@ class FromScratch(pl.LightningModule):
         return acc
 
     @staticmethod
-    def unbind(embeddings: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+    def unbind(embeddings: Tensor) -> List[Tensor]:
         return torch.unbind(
-            torch.reshape(embeddings, (3, -1, *embeddings.shape[1:])),
+            torch.reshape(embeddings, (3, -1, embeddings.shape[-1])),
         )
 
-    def _step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+    def _step(self, batch: Tuple[Tensor, Tensor], batch_idx: int, calculate_acc: bool = True):
         # Run data through model
         things_batch, imagenet_batch = batch
-        things_batch_images = torch.cat([things_batch[0], things_batch[1], things_batch[2]], dim=0) # should be [bs*3 x 3 x w x h]
+        things_batch_images = torch.cat([things_batch[0], things_batch[1], things_batch[2]], dim=0)  # should be [bs*3 x 3 x w x h]
         imagenet_batch_images, imagenet_batch_labels = imagenet_batch
         things_embeddings, imagenet_logits = self(things_batch_images, imagenet_batch_images)
+        things_embeddings_norm = F.normalize(things_embeddings, dim=1)  # TODO: correct?
+
         # Calculate similarity loss
-        anchor, positive, negative = self.unbind(things_embeddings) # should be [bs*3 x 3 x w x h] -> 3 x [bs x 3 x w x h]
+        anchor, positive, negative = self.unbind(things_embeddings_norm)  # should be [bs*3 x d] -> 3 x [bs x d]
         dots = self.compute_similarities(anchor, positive, negative)
         similarity_loss = self.similarity_loss_fun(dots)
-        similarity_acc = self.choice_accuracy(dots)
+
+        import pdb; pdb.set_trace()
+
         # Calculate classification loss
         classification_loss = self.classification_loss_fun(imagenet_logits, imagenet_batch_labels)
-        classification_acc = self.classification_accuracy(imagenet_logits, imagenet_batch_labels)
+
         # Combine & log losses
         loss = (1 - self.alpha) * similarity_loss + self.alpha * classification_loss
+
+        # Calculate accuracies
+        if calculate_acc:
+            classification_acc = self.classification_accuracy(imagenet_logits, imagenet_batch_labels)
+            similarity_acc = self.choice_accuracy(dots)
+        else:
+            classification_acc = None
+            similarity_acc = None
+
         return (
             loss,
             classification_loss,
@@ -142,13 +156,19 @@ class FromScratch(pl.LightningModule):
             classification_acc,
             similarity_loss,
             similarity_acc,
-        ) = self._step(batch, batch_idx)
-        self.log("train_loss", loss, on_epoch=True)
-        self.log("train_imgnt_loss", classification_loss, on_epoch=True)
-        self.log("train_imgnt_acc", classification_acc, on_epoch=True)
-        self.log("train_things_loss", similarity_loss, on_epoch=True)
-        self.log("train_things_acc", similarity_acc, on_epoch=True)
+        ) = self._step(batch, batch_idx, calculate_acc=False)
+        self.log("train_loss", loss, prog_bar=True, on_epoch=True, on_step=True)
+        self.log("train_imgnt_loss", classification_loss, prog_bar=True, on_epoch=True, on_step=True)
+        #self.log("train_imgnt_acc", classification_acc, prog_bar=True, on_epoch=True, on_step=True)
+        self.log("train_things_loss", similarity_loss, prog_bar=True, on_epoch=True, on_step=True)
+        #self.log("train_things_acc", similarity_acc, prog_bar=True, on_epoch=True, on_step=True)
         return loss
+
+    def train_epoch_end(self, outputs: List[Any]) -> None:
+        lr_scheduler = self.lr_schedulers()
+        if lr_scheduler is not None:
+            lr_scheduler.step()
+
 
     def validation_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
         (
@@ -165,7 +185,7 @@ class FromScratch(pl.LightningModule):
             "val_things_loss": similarity_loss,
             "val_things_acc": similarity_acc,
         }
-        self.log_dict(metrics)
+        self.log_dict(metrics, sync_dist=True)
         return metrics
 
     def test_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
@@ -204,7 +224,6 @@ class FromScratch(pl.LightningModule):
         ooo_predictions = self.convert_predictions(sim_predictions)
         return ooo_predictions
 
-        raise NotImplementedError("This method is not implemented yet.")
 
     def backward(self, loss, optimizer, optimizer_idx):
         loss.backward()
@@ -227,4 +246,7 @@ class FromScratch(pl.LightningModule):
             raise ValueError(
                 "\nUse Adam or SGD for learning a linear transformation of a network's feature space.\n"
             )
-        return optimizer
+
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 30, T_mult=1, eta_min=self.lr/100, last_epoch=-1, verbose=False)
+
+        return [optimizer], [scheduler]
