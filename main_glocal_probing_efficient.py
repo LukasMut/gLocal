@@ -406,7 +406,8 @@ def run(
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
     imagenet_train_features, imagenet_val_features = get_imagenet_features(
-        root=imagenet_features_root, format=features_format, device=device)
+        root=imagenet_features_root, format=features_format, device=device
+    )
     triplets = utils.probing.load_triplets(data_root)
     features = (
         features - features.mean()
