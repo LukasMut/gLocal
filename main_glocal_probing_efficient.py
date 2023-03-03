@@ -390,12 +390,10 @@ def get_imagenet_features(root: str, format: str, device: str) -> Tuple[Any, Any
         imagenet_train_features = utils.probing.FeaturesHDF5(
             root=root,
             split="train",
-            device=device,
         )
         imagenet_val_features = utils.probing.FeaturesHDF5(
             root=root,
             split="val",
-            device=device,
         )
     elif format == "pt":
         imagenet_train_features = utils.probing.FeaturesPT(
