@@ -28,20 +28,19 @@ class FeaturesPT(torch.utils.data.Dataset):
 
 
 class FeaturesHDF5(torch.utils.data.Dataset):
-    def __init__(self, root: str, split: str = "train", device: str = "cuda") -> None:
+    def __init__(self, root: str, split: str = "train") -> None:
         super(FeaturesHDF5, self).__init__()
         self.root = root
         self.split = split
-        self.device = torch.device(device)
         self.h5py_view = h5py.File(
             os.path.join(self.root, self.split, "features.hdf5"), "r"
         )
         self.h5py_key = list(self.h5py_view.keys()).pop()
+        features = torch.from_numpy(self.h5py_view[self.h5py_key][:])
+        self.features = features.to(torch.float32)
 
     def __getitem__(self, idx: int) -> Tensor:
-        features = self.h5py_view[self.h5py_key][idx]
-        features = torch.from_numpy(features).to(self.device)
-        return features
+        return self.features[idx]
 
     def __len__(self) -> int:
-        return self.h5py_view[self.h5py_key].shape[0]
+        return self.features.shape[0]
