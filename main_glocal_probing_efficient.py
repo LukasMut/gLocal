@@ -67,13 +67,19 @@ def parseargs():
         nargs="+",
         metavar="eta",
         choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
-        )
-    aa("--regularization", type=str, default="l2", choices=["l2", "eye"], help="What kind of regularization to be applied")
+    )
+    aa(
+        "--regularization",
+        type=str,
+        default="l2",
+        choices=["l2", "eye"],
+        help="What kind of regularization to be applied",
+    )
     aa(
         "--lmbdas",
         type=float,
         default=1e-3,
-        nargs='+',
+        nargs="+",
         help="Relative contribution of the l2 or identity regularization penality",
         choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
     )
@@ -90,20 +96,20 @@ def parseargs():
         default=1,
         nargs="+",
         help="temperature value for contrastive learning objective",
-        choices=[1., 5e-1, 25e-2, 1e-1, 5e-2, 25e-3, 1e-2],
+        choices=[1.0, 5e-1, 25e-2, 1e-1, 5e-2, 25e-3, 1e-2],
     )
     aa(
         "--sigma",
         type=float,
         default=1e-3,
         help="Scalar to scale a neural net's pre-transformed representation space prior to the optimization process",
-        choices=[1., 1e-1, 1e-2, 1e-3, 1e-4],
+        choices=[1.0, 1e-1, 1e-2, 1e-3, 1e-4],
     )
     aa(
         "--triplet_batch_size",
         type=int,
         default=256,
-        metavar="B_T"
+        metavar="B_T",
         help="Use 64 <= B <= 1024 and power of two for running optimization process on GPU",
         choices=[64, 128, 256, 512, 1024],
     )
@@ -171,20 +177,19 @@ def get_combination(
 ) -> List[Tuple[float, float, float, float, int]]:
     combs = []
     combs.extend(
-        list(
-            itertools.product(
-                etas,
-                lambdas,
-                alphas,
-                taus,
-                contrastive_batch_sizes
-            )
-        )
+        list(itertools.product(etas, lambdas, alphas, taus, contrastive_batch_sizes))
     )
     return combs[int(os.environ["SLURM_ARRAY_TASK_ID"])]
 
 
-def create_optimization_config(args, eta: float, lmbda: float, alpha: float, tau: float, contrastive_batch_size: int) -> Dict[str, Any]:
+def create_optimization_config(
+    args,
+    eta: float,
+    lmbda: float,
+    alpha: float,
+    tau: float,
+    contrastive_batch_size: int,
+) -> Dict[str, Any]:
     """Create frozen config dict for optimization hyperparameters."""
     optim_cfg = dict()
     optim_cfg["optim"] = args.optim
@@ -302,14 +307,20 @@ def make_results_df(
     probing_results_current_run["tau"] = optim_cfg["tau"]
     probing_results_current_run["sigma"] = optim_cfg["sigma"]
     probing_results_current_run["bias"] = optim_cfg["use_bias"]
-    probing_results_current_run["contrastive_batch_size"] = optim_cfg["contrastive_batch_size"]
+    probing_results_current_run["contrastive_batch_size"] = optim_cfg[
+        "contrastive_batch_size"
+    ]
     probing_results_current_run["triplet_batch_size"] = optim_cfg["triplet_batch_size"]
     probing_results_current_run["contrastive"] = True
     return probing_results_current_run
 
 
 def save_results(
-    args, optim_cfg: Dict[str, Any], probing_acc: float, probing_loss: float, ooo_choices: Array
+    args,
+    optim_cfg: Dict[str, Any],
+    probing_acc: float,
+    probing_loss: float,
+    ooo_choices: Array,
 ) -> None:
     out_path = os.path.join(args.probing_root, "results")
     if not os.path.exists(out_path):
@@ -516,11 +527,11 @@ if __name__ == "__main__":
     model_features = features[args.source][args.model][args.module]
 
     eta, lmbda, alpha, tau, contrastive_batch_size = get_combination(
-        etas=args.learning_rates, 
-        lambdas=args.lambdas, 
-        alphas=args.alphas, 
-        taus=args.taus, 
-        contastive_batch_size=args.contrastive_batch_sizes
+        etas=args.learning_rates,
+        lambdas=args.lambdas,
+        alphas=args.alphas,
+        taus=args.taus,
+        contastive_batch_size=args.contrastive_batch_sizes,
     )
 
     optim_cfg = create_optimization_config(
@@ -550,7 +561,7 @@ if __name__ == "__main__":
         optim_cfg=optim_cfg,
         probing_acc=avg_cv_acc,
         probing_loss=avg_cv_loss,
-        ooo_choices=ooo_choices
+        ooo_choices=ooo_choices,
     )
 
     out_path = os.path.join(
