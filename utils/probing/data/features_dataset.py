@@ -42,3 +42,6 @@ class FeaturesHDF5(torch.utils.data.Dataset):
         features = self.h5py_view[self.h5py_key][idx]
         features = torch.from_numpy(features).to(self.device)
         return features
+
+    def __len__(self) -> int:
+        return self.h5py_view[self.h5py_key].shape[0]
