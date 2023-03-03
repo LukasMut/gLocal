@@ -1,5 +1,5 @@
 from .contrastive_loss import ContrastiveLoss
-from .data import TripletData
+from .data import TripletData, FeaturesHDF5, FeaturesPT
 from .global_probe import GlobalProbe
 from .glocal_probe import GlocalFeatureProbe, GlocalProbe
 from .from_scratch import FromScratch

@@ -386,7 +386,7 @@ def save_results(
 
 
 def get_imagenet_features(root: str, format: str, device: str) -> Tuple[Any, Any]:
-    if format == "hdf":
+    if format == "hdf5":
         imagenet_train_features = utils.probing.FeaturesHDF5(
             root=root,
             split="train",
