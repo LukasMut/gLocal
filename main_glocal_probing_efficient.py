@@ -83,18 +83,6 @@ def parseargs():
         default=1e-1,
         nargs="+",
         help="Relative contribution of the contrastive loss term",
-        choices=[
-            5e-1,
-            4e-1,
-            3e-1,
-            2e-1,
-            1e-1,
-            5e-2,
-            4e-2,
-            3e-2,
-            2e-2,
-            1e-2,
-        ],
     )
     aa(
         "--taus",
