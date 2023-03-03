@@ -528,7 +528,7 @@ if __name__ == "__main__":
 
     eta, lmbda, alpha, tau, contrastive_batch_size = get_combination(
         etas=args.learning_rates,
-        lambdas=args.lambdas,
+        lambdas=args.lmbdas,
         alphas=args.alphas,
         taus=args.taus,
         contastive_batch_size=args.contrastive_batch_sizes,
