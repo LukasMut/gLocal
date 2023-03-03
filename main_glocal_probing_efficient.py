@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import os
 import pickle
 import warnings
@@ -59,12 +60,28 @@ def parseargs():
         default=1854,
     )
     aa("--optim", type=str, default="Adam", choices=["Adam", "AdamW", "SGD"])
-    aa("--learning_rate", type=float, metavar="eta", default=1e-3)
-    aa("--regularization", type=str, default="l2", choices=["l2", "eye"])
     aa(
-        "--alpha",
+        "--learning_rates",
+        type=float,
+        default=1e-3,
+        nargs="+",
+        metavar="eta",
+        choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+        )
+    aa("--regularization", type=str, default="l2", choices=["l2", "eye"], help="What kind of regularization to be applied")
+    aa(
+        "--lmbdas",
+        type=float,
+        default=1e-3,
+        nargs='+',
+        help="Relative contribution of the l2 or identity regularization penality",
+        choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+    )
+    aa(
+        "--alphas",
         type=float,
         default=1e-1,
+        nargs="+",
         help="Relative contribution of the contrastive loss term",
         choices=[
             5e-1,
@@ -73,67 +90,64 @@ def parseargs():
             2e-1,
             1e-1,
             5e-2,
-            5e-2,
             4e-2,
             3e-2,
             2e-2,
             1e-2,
-            1e-2,
         ],
     )
     aa(
-        "--tau",
+        "--taus",
         type=float,
         default=1,
+        nargs="+",
         help="temperature value for contrastive learning objective",
-    )
-    aa(
-        "--lmbda",
-        type=float,
-        default=1e-3,
-        help="Relative contribution of the l2 or identity regularization term",
-        choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+        choices=[1., 5e-1, 25e-2, 1e-1, 5e-2, 25e-3, 1e-2],
     )
     aa(
         "--sigma",
         type=float,
         default=1e-3,
         help="Scalar to scale a neural net's pre-transformed representation space prior to the optimization process",
-        choices=[1e-1, 1e-2, 1e-3, 1e-4],
+        choices=[1., 1e-1, 1e-2, 1e-3, 1e-4],
     )
     aa(
         "--triplet_batch_size",
         type=int,
         default=256,
-        help="Use power of 2 for running optimization process on GPU",
+        metavar="B_T"
+        help="Use 64 <= B <= 1024 and power of two for running optimization process on GPU",
         choices=[64, 128, 256, 512, 1024],
     )
     aa(
-        "--contrastive_batch_size",
+        "--contrastive_batch_sizes",
         type=int,
         default=1024,
-        help="Use power of 2 for running optimization process on GPU",
-        choices=[128, 256, 512, 1024, 2048, 4096],
+        nargs="+",
+        metavar="B_C",
+        help="Use 64 <= B <= 4096 and power of two for running optimization process on GPU",
+        choices=[64, 128, 256, 512, 1024, 2048, 4096],
     )
     aa(
         "--epochs",
         type=int,
         help="Maximum number of epochs to perform finetuning",
         default=100,
+        choices=[50, 100, 150, 200, 250, 300],
     )
     aa(
         "--burnin",
         type=int,
         help="Minimum number of epochs to perform finetuning",
-        default=10,
+        default=20,
     )
     aa(
         "--patience",
         type=int,
         help="number of checks with no improvement after which training will be stopped",
-        default=10,
+        default=15,
     )
-    aa("--device", type=str, default="cpu", choices=["cpu", "gpu"])
+    aa("--device", type=str, default="gpu", choices=["cpu", "gpu"])
     aa(
         "--features_format",
         type=str,
@@ -160,16 +174,38 @@ def parseargs():
     return args
 
 
-def create_optimization_config(args) -> Dict[str, Any]:
+def get_combination(
+    etas: List[float],
+    lambdas: List[float],
+    alphas: List[float],
+    taus: List[float],
+    contrastive_batch_sizes: List[int],
+) -> List[Tuple[float, float, float, float, int]]:
+    combs = []
+    combs.extend(
+        list(
+            itertools.product(
+                etas,
+                lambdas,
+                alphas,
+                taus,
+                contrastive_batch_sizes
+            )
+        )
+    )
+    return combs[int(os.environ["SLURM_ARRAY_TASK_ID"])]
+
+
+def create_optimization_config(args, eta: float, lmbda: float, alpha: float, tau: float, contrastive_batch_size: int) -> Dict[str, Any]:
     """Create frozen config dict for optimization hyperparameters."""
     optim_cfg = dict()
     optim_cfg["optim"] = args.optim
-    optim_cfg["lr"] = args.learning_rate
     optim_cfg["reg"] = args.regularization
-    optim_cfg["lmbda"] = args.lmbda
-    optim_cfg["alpha"] = args.alpha
-    optim_cfg["tau"] = args.tau
-    optim_cfg["contrastive_batch_size"] = args.contrastive_batch_size
+    optim_cfg["lr"] = eta
+    optim_cfg["lmbda"] = lmbda
+    optim_cfg["alpha"] = alpha
+    optim_cfg["tau"] = tau
+    optim_cfg["contrastive_batch_size"] = contrastive_batch_size
     optim_cfg["triplet_batch_size"] = args.triplet_batch_size
     optim_cfg["max_epochs"] = args.epochs
     optim_cfg["min_epochs"] = args.burnin
@@ -260,13 +296,7 @@ def make_results_df(
     model_name: str,
     module_name: str,
     source: str,
-    reg: str,
-    optim: str,
-    lr: float,
-    alpha: float,
-    lmbda: float,
-    tau: float,
-    bias: bool,
+    optim_cfg: Dict[str, Any],
 ) -> pd.DataFrame:
     probing_results_current_run = pd.DataFrame(index=range(1), columns=columns)
     probing_results_current_run["model"] = model_name
@@ -276,19 +306,22 @@ def make_results_df(
     probing_results_current_run["module"] = module_name
     probing_results_current_run["family"] = utils.analyses.get_family_name(model_name)
     probing_results_current_run["source"] = source
-    probing_results_current_run["reg"] = reg
-    probing_results_current_run["alpha"] = alpha
-    probing_results_current_run["lmbda"] = lmbda
-    probing_results_current_run["tau"] = tau
-    probing_results_current_run["optim"] = optim.lower()
-    probing_results_current_run["lr"] = lr
+    probing_results_current_run["reg"] = optim_cfg["reg"]
+    probing_results_current_run["optim"] = optim_cfg["optim"].lower()
+    probing_results_current_run["lr"] = optim_cfg["lr"]
+    probing_results_current_run["alpha"] = optim_cfg["alpha"]
+    probing_results_current_run["lmbda"] = optim_cfg["lmbda"]
+    probing_results_current_run["tau"] = optim_cfg["tau"]
+    probing_results_current_run["sigma"] = optim_cfg["sigma"]
+    probing_results_current_run["bias"] = optim_cfg["use_bias"]
+    probing_results_current_run["contrastive_batch_size"] = optim_cfg["contrastive_batch_size"]
+    probing_results_current_run["triplet_batch_size"] = optim_cfg["triplet_batch_size"]
     probing_results_current_run["contrastive"] = True
-    probing_results_current_run["bias"] = bias
     return probing_results_current_run
 
 
 def save_results(
-    args, probing_acc: float, probing_loss: float, ooo_choices: Array
+    args, optim_cfg: Dict[str, Any], probing_acc: float, probing_loss: float, ooo_choices: Array
 ) -> None:
     out_path = os.path.join(args.probing_root, "results")
     if not os.path.exists(out_path):
@@ -310,13 +343,7 @@ def save_results(
             model_name=args.model,
             module_name=args.module,
             source=args.source,
-            reg=args.regularization,
-            optim=args.optim,
-            lr=args.learning_rate,
-            alpha=args.alpha,
-            lmbda=args.lmbda,
-            tau=args.tau,
-            bias=args.use_bias,
+            optim_cfg=optim_cfg,
         )
         probing_results = pd.concat(
             [probing_results_overall, probing_results_current_run],
@@ -340,7 +367,10 @@ def save_results(
             "alpha",
             "lambda",
             "tau",
+            "sigma",
             "bias",
+            "contrastive_batch_size",
+            "triplet_batch_size",
             "contrastive",
         ]
         probing_results = make_results_df(
@@ -351,18 +381,12 @@ def save_results(
             model_name=args.model,
             module_name=args.module,
             source=args.source,
-            reg=args.regularization,
-            alpha=args.alpha,
-            lmbda=args.lmbda,
-            tau=args.tau,
-            optim=args.optim,
-            lr=args.learning_rate,
-            bias=args.use_bias,
+            optim_cfg=optim_cfg,
         )
         probing_results.to_pickle(os.path.join(out_path, "probing_results.pkl"))
 
 
-def get_imagenet_features(root: str, format: str, device: str):
+def get_imagenet_features(root: str, format: str, device: str) -> Tuple[Any, Any]:
     if format == "hdf":
         imagenet_train_features = utils.probing.FeaturesHDF5(
             root=root,
@@ -387,7 +411,7 @@ def get_imagenet_features(root: str, format: str, device: str):
         )
     else:
         raise ValueError(
-            "\nCan only create dataset for features that were saved in either 'pt' or 'hdf5' format.\n"
+            "\nTensor datasets can only be created for features that were saved in either 'pt' or 'hdf5' format.\n"
         )
     return imagenet_train_features, imagenet_val_features
 
@@ -502,7 +526,24 @@ if __name__ == "__main__":
     seed_everything(args.rnd_seed, workers=True)
     features = load_features(args.probing_root)
     model_features = features[args.source][args.model][args.module]
-    optim_cfg = create_optimization_config(args)
+
+    eta, lmbda, alpha, tau, contrastive_batch_size = get_combination(
+        etas=args.learning_rates, 
+        lambdas=args.lambdas, 
+        alphas=args.alphas, 
+        taus=args.taus, 
+        contastive_batch_size=args.contrastive_batch_sizes
+    )
+
+    optim_cfg = create_optimization_config(
+        args=args,
+        eta=eta,
+        lmbda=lmbda,
+        alpha=alpha,
+        tau=tau,
+        contrastive_batch_size=contrastive_batch_size,
+    )
+
     ooo_choices, cv_results, transform = run(
         features=model_features,
         imagenet_features_root=args.imagenet_features_root,
@@ -517,7 +558,11 @@ if __name__ == "__main__":
     avg_cv_acc = get_mean_cv_acc(cv_results)
     avg_cv_loss = get_mean_cv_loss(cv_results)
     save_results(
-        args, probing_acc=avg_cv_acc, probing_loss=avg_cv_loss, ooo_choices=ooo_choices
+        args=args,
+        optim_cfg=optim_cfg,
+        probing_acc=avg_cv_acc,
+        probing_loss=avg_cv_loss,
+        ooo_choices=ooo_choices
     )
 
     out_path = os.path.join(
@@ -526,11 +571,12 @@ if __name__ == "__main__":
         args.source,
         args.model,
         args.module,
-        str(args.alpha),
-        str(args.lmbda),
-        str(args.tau),
         args.optim.lower(),
-        str(args.learning_rate),
+        str(eta),
+        str(lmbda),
+        str(alpha),
+        str(tau),
+        str(contrastive_batch_size),
     )
     if not os.path.exists(out_path):
         os.makedirs(out_path, exist_ok=True)
