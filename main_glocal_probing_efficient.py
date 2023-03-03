@@ -531,7 +531,7 @@ if __name__ == "__main__":
         lambdas=args.lmbdas,
         alphas=args.alphas,
         taus=args.taus,
-        contastive_batch_size=args.contrastive_batch_sizes,
+        contrastive_batch_sizes=args.contrastive_batch_sizes,
     )
 
     optim_cfg = create_optimization_config(
