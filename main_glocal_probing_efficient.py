@@ -366,7 +366,7 @@ def get_imagenet_features(root: str, format: str, device: str):
     if format == "hdf":
         imagenet_train_features = utils.probing.FeaturesHDF5(
             root=root,
-            split="train_set",
+            split="train",
             device=device,
         )
         imagenet_val_features = utils.probing.FeaturesHDF5(
@@ -377,7 +377,7 @@ def get_imagenet_features(root: str, format: str, device: str):
     elif format == "pt":
         imagenet_train_features = utils.probing.FeaturesPT(
             root=root,
-            split="train_set",
+            split="train",
             device=device,
         )
         imagenet_val_features = utils.probing.FeaturesPT(
