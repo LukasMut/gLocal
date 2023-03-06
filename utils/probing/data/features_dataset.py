@@ -36,11 +36,12 @@ class FeaturesHDF5(torch.utils.data.Dataset):
             os.path.join(self.root, self.split, "features.hdf5"), "r"
         )
         self.h5py_key = list(self.h5py_view.keys()).pop()
-        features = torch.from_numpy(self.h5py_view[self.h5py_key][:])
-        self.features = features.to(torch.float32)
+        # features = torch.from_numpy(self.h5py_view[self.h5py_key][:])
+        # self.features = features.to(torch.float32)
 
     def __getitem__(self, idx: int) -> Tensor:
-        return self.features[idx]
+        return torch.from_numpy(self.h5py_view[self.h5py_key][idx]).to(torch.float32)
+        # return self.features[idx]
 
     def __len__(self) -> int:
-        return self.features.shape[0]
+        return self.h5py_view[self.h5py_key].shape[0] 
