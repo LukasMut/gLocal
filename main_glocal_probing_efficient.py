@@ -81,7 +81,7 @@ def parseargs():
         default=1e-3,
         nargs="+",
         help="Relative contribution of the l2 or identity regularization penality",
-        choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+        choices=[1., 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
     )
     aa(
         "--alphas",
