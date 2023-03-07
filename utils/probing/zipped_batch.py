@@ -1,13 +1,27 @@
 from typing import Iterator
 
+from torch.utils.data import DataLoader
 
-class ZippedBatchLoader(object):
+
+class ZippedBatchLoader(DataLoader):
     def __init__(
-        self, batches_i: Iterator, batches_j: Iterator, times_repeated: int = None
+        self,
+        batches_i: Iterator,
+        batches_j: Iterator,
+        repeat_times: int = None,
+        num_workers: int = 0,
+        pin_memory: bool = False,
+        drop_last: bool = False,
     ) -> None:
+        super().__init__(
+            dataset=None,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            drop_last=drop_last,
+        )
         self.batches_i = batches_i
         self.batches_j = batches_j
-        self.times = times_repeated
+        self.times = repeat_times
 
     @staticmethod
     def _repeat(object: Iterator, times: int = None) -> Iterator:
