@@ -97,7 +97,7 @@ def parseargs():
     aa(
         "--tau",
         type=float,
-        default=.1,
+        default=0.1,
         help="temperature value for contrastive learning objective",
     )
     aa(
@@ -105,7 +105,7 @@ def parseargs():
         type=float,
         default=1e-3,
         help="Relative contribution of the l2 or identity regularization term",
-        choices=[1e+3, 1e+2, 1e+1, 1., 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+        choices=[1e3, 1e2, 1e1, 1.0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
     )
     aa(
         "--sigma",
@@ -478,10 +478,10 @@ def run(
             train=True,
             num_workers=8,
         )
-        train_batches = utils.probing.zip_batches(
+        train_batches = utils.probing.ZippedBatch(
             train_batches_things, train_batches_imagenet
         )
-        val_batches = utils.probing.zip_batches(
+        val_batches = utils.probing.ZippedBatch(
             val_batches_things, val_batches_imagenet
         )
         glocal_probe = utils.probing.GlocalProbe(
