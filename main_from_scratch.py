@@ -386,10 +386,10 @@ def run(
             train=True,  # TODO ?
             num_workers=NUM_WORKERS,
         )
-        train_batches = utils.probing.zip_batches(
+        train_batches = utils.probing.helpers.ZippedIter(
             train_batches_things, train_batches_imagenet
         )
-        val_batches = utils.probing.zip_batches(
+        val_batches = utils.probing.helpers.ZippedIter(
             val_batches_things, val_batches_imagenet
         )
         trainable = utils.probing.FromScratch(
@@ -408,15 +408,10 @@ def run(
             gradient_clip_algorithm="norm",
             precision=16 if device == "gpu" else 32,
         )
-
         trainer.fit(trainable, train_batches, val_batches)
         val_performance = trainer.test(
             trainable,
             dataloaders=val_batches,
-        )
-        # Reset val batches to get predictions
-        val_batches = utils.probing.zip_batches(
-            val_batches_things, val_batches_imagenet
         )
         predictions = trainer.predict(trainable, dataloaders=val_batches)
         predictions = torch.cat(predictions, dim=0).tolist()
