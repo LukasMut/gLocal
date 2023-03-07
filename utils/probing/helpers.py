@@ -39,10 +39,10 @@ class ZippedBatch:
             zipped_batches = zip(self.batches_i, self.batches_j)
         return zipped_batches
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator:
         return iter(self._zip_batches())
 
-    def __len__(self):
+    def __len__(self) -> int:
         if len(self.batches_j) > len(self.batches_i):
             length = len(self.batches_j)
         elif len(self.batches_j) < len(self.batches_i):
