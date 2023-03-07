@@ -13,6 +13,8 @@ from sklearn.model_selection import KFold
 from thingsvision import get_extractor
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
+from torchvision.transforms import Compose, Normalize, Resize, ToTensor, CenterCrop, RandomResizedCrop, RandomHorizontalFlip
+
 from tqdm import tqdm
 
 import data
@@ -312,23 +314,20 @@ def run(
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
     extractor = load_extractor(model_cfg)
-    """
-    from thingsvision.utils.data import ImageDataset
-    imagenet_train_set = ImageDataset(
-            root=imagenet_root,
-            out_path='./test_features',
-            backend=extractor.get_backend(),
-            transforms=extractor.get_transformations(resize_dim=256, crop_dim=224) # set input dimensionality to whatever is needed for your pretrained model
-            )
-    """
-    # TODO: should we use thingsvision here or not? -- we need labels
+
+    normalize = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    train_transform = Compose([RandomResizedCrop(224), RandomHorizontalFlip(), ToTensor(), normalize])
+    val_transform = Compose([Resize(256), CenterCrop(224), ToTensor(), normalize])
+
     imagenet_train_set = ImageFolder(
         os.path.join(imagenet_root, "train_set"),
-        extractor.get_transformations(resize_dim=256, crop_dim=224),
+        train_transform
+        #extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
     imagenet_val_set = ImageFolder(
         os.path.join(imagenet_root, "val_set"),
-        extractor.get_transformations(resize_dim=256, crop_dim=224),
+        val_transform
+        #extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
     triplets = utils.probing.load_triplets(data_root)
     objects = np.arange(n_objects)
