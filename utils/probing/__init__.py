@@ -6,4 +6,4 @@ from .glocal_probe import GlocalFeatureProbe, GlocalProbe
 from .helpers import (get_temperature, load_model_config,
                       load_triplets, partition_triplets, standardize)
 from .triplet_loss import TripletLoss
-from .zipped_batch import ZippedBatch
+from .zipped_batch import ZippedBatchLoader
