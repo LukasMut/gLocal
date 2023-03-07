@@ -32,21 +32,24 @@ class ZippedBatch:
         if len(self.batches_j) > len(self.batches_i):
             batches_i_repeated = self._repeat(self.batches_i, self.times)
             zipped_batches = zip(batches_i_repeated, self.batches_j)
-            self.length = len(self.batches_j)
         elif len(self.batches_j) < len(self.batches_i):
             batches_j_repeated = self._repeat(self.batches_j, self.times)
             zipped_batches = zip(self.batches_i, batches_j_repeated)
-            self.length = len(self.batches_i)
         else:
             zipped_batches = zip(self.batches_i, self.batches_j)
-            self.length = len(self.batches_i)
         return zipped_batches
 
-    def __iter__(self) -> Iterator:
+    def __iter__(self):
         return iter(self._zip_batches())
 
-    def __len__(self) -> int:
-        return self.length
+    def __len__(self):
+        if len(self.batches_j) > len(self.batches_i):
+            length = len(self.batches_j)
+        elif len(self.batches_j) < len(self.batches_i):
+            length = len(self.batches_i)
+        else:
+            length = len(self.batches_j)
+        return length
 
 
 def load_triplets(data_root: str) -> Array:
