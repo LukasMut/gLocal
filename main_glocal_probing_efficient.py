@@ -479,10 +479,14 @@ def run(
             num_workers=num_processes,
         )
         train_batches = utils.probing.ZippedBatchLoader(
-            train_batches_things, train_batches_imagenet
+            batches_i=train_batches_things,
+            batches_j=train_batches_imagenet,
+            num_workers=num_processes,
         )
         val_batches = utils.probing.ZippedBatchLoader(
-            val_batches_things, val_batches_imagenet
+            batches_i=val_batches_things,
+            batches_j=val_batches_imagenet,
+            num_workers=num_processes,
         )
         glocal_probe = utils.probing.GlocalFeatureProbe(
             features=features,
