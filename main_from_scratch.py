@@ -7,11 +7,14 @@ import numpy as np
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, StochasticWeightAveraging
+from pytorch_lightning.plugins import DDPPlugin
 from sklearn.model_selection import KFold
 from thingsvision import get_extractor
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
+from torchvision.transforms import Compose, Normalize, Resize, ToTensor, CenterCrop, RandomResizedCrop, RandomHorizontalFlip
+
 from tqdm import tqdm
 
 import data
@@ -117,6 +120,25 @@ def parseargs():
         help="number of checks with no improvement after which training will be stopped",
         default=10,
     )
+    aa(
+        "--training_strategy",
+        type=str,
+        default="ddp",
+        choices=["ddp", "dp", "ddp_fork"],
+        help="Training strategy for PyTorch Lightning",
+    )
+    aa(
+        "--label_smoothing",
+        type=float,
+        default=0.1,
+        help="Label smoothing value",
+    )
+    aa(
+        "--stochastic_weight_averaging_weight",
+        type=float,
+        default=0.001,
+        help="Stochastic weight averaging weight. If set to 0, no averaging is performed",
+    )
     aa("--device", type=str, default="cpu", choices=["cpu", "gpu"])
     aa(
         "--num_processes",
@@ -135,7 +157,10 @@ def create_optimization_config(args) -> Dict[str, Any]:
     """Create frozen config dict for optimization hyperparameters."""
     optim_cfg = dict()
     optim_cfg["optim"] = args.optim
-    optim_cfg["lr"] = args.learning_rate
+    lr_factor = 1.0
+    if args.device == "gpu" and args.training_strategy == "ddp":
+        lr_factor = torch.cuda.device_count()
+    optim_cfg["lr"] = args.learning_rate * lr_factor * args.classification_batch_size / 512
     optim_cfg["alpha"] = args.alpha
     optim_cfg["lmbda"] = args.lmbda
     optim_cfg["classification_batch_size"] = args.classification_batch_size
@@ -143,6 +168,10 @@ def create_optimization_config(args) -> Dict[str, Any]:
     optim_cfg["max_epochs"] = args.epochs
     optim_cfg["patience"] = args.patience
     optim_cfg["ckptdir"] = os.path.join(args.log_dir, args.model, args.module)
+    optim_cfg["gradient_clip_val"] = args.gradient_clip_val
+    optim_cfg["training_strategy"] = (args.training_strategy + "_find_unused_parameters_false") if args.training_strategy == "ddp" else args.training_strategy
+    optim_cfg["label_smoothing"] = args.label_smoothing
+    optim_cfg["stochastic_weight_averaging_weight"] = args.stochastic_weight_averaging_weight
     return optim_cfg
 
 
@@ -165,8 +194,8 @@ def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str,
 
 
 def get_batches(
-    dataset: Tensor, batch_size: int, train: bool, num_workers: int = 0
-) -> Iterator:
+    dataset: torch.utils.data.Dataset, batch_size: int, train: bool, num_workers: int = 0
+) -> DataLoader:
     batches = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
@@ -198,6 +227,9 @@ def get_callbacks(optim_cfg: FrozenDict, steps: int = 20) -> List[Callable]:
         check_finite=True,
     )
     callbacks = [checkpoint_callback, early_stopping]
+    if optim_cfg["stochastic_weight_averaging_weight"] > 0:
+        stochastic_weight_avg = StochasticWeightAveraging(swa_lrs=optim_cfg["stochastic_weight_averaging_weight"])
+        callbacks.append(stochastic_weight_avg)
     return callbacks
 
 
@@ -282,23 +314,20 @@ def run(
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
     extractor = load_extractor(model_cfg)
-    """
-    from thingsvision.utils.data import ImageDataset
-    imagenet_train_set = ImageDataset(
-            root=imagenet_root,
-            out_path='./test_features',
-            backend=extractor.get_backend(),
-            transforms=extractor.get_transformations(resize_dim=256, crop_dim=224) # set input dimensionality to whatever is needed for your pretrained model
-            )
-    """
-    # TODO: should we use thingsvision here or not? -- we need labels
+
+    normalize = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    train_transform = Compose([RandomResizedCrop(224), RandomHorizontalFlip(), ToTensor(), normalize])
+    val_transform = Compose([Resize(256), CenterCrop(224), ToTensor(), normalize])
+
     imagenet_train_set = ImageFolder(
         os.path.join(imagenet_root, "train_set"),
-        extractor.get_transformations(resize_dim=256, crop_dim=224),
+        train_transform
+        #extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
     imagenet_val_set = ImageFolder(
         os.path.join(imagenet_root, "val_set"),
-        extractor.get_transformations(resize_dim=256, crop_dim=224),
+        val_transform
+        #extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
     triplets = utils.probing.load_triplets(data_root)
     objects = np.arange(n_objects)
@@ -357,10 +386,10 @@ def run(
             train=True,  # TODO ?
             num_workers=NUM_WORKERS,
         )
-        train_batches = utils.probing.zip_batches(
+        train_batches = utils.probing.helpers.ZippedIter(
             train_batches_things, train_batches_imagenet
         )
-        val_batches = utils.probing.zip_batches(
+        val_batches = utils.probing.helpers.ZippedIter(
             val_batches_things, val_batches_imagenet
         )
         trainable = utils.probing.FromScratch(
@@ -371,23 +400,18 @@ def run(
         trainer = Trainer(
             accelerator=device,
             callbacks=callbacks,
-            strategy="ddp",
+            strategy=optim_cfg["training_strategy"],
             max_epochs=optim_cfg["max_epochs"],
             devices=num_processes if device == "cpu" else "auto",
             enable_progress_bar=True,
-            gradient_clip_val=args.gradient_clip_val,
+            gradient_clip_val=optim_cfg["gradient_clip_val"],
             gradient_clip_algorithm="norm",
             precision=16 if device == "gpu" else 32,
         )
-
         trainer.fit(trainable, train_batches, val_batches)
         val_performance = trainer.test(
             trainable,
             dataloaders=val_batches,
-        )
-        # Reset val batches to get predictions
-        val_batches = utils.probing.zip_batches(
-            val_batches_things, val_batches_imagenet
         )
         predictions = trainer.predict(trainable, dataloaders=val_batches)
         predictions = torch.cat(predictions, dim=0).tolist()
@@ -400,6 +424,12 @@ def run(
 
 
 if __name__ == "__main__":
+    try:
+        for i in range(torch.cuda.device_count()):
+            print(torch.cuda.get_device_properties(i).name)
+    except:
+        pass
+
     # parse arguments
     args = parseargs()
     # seed everything for reproducibility of results
