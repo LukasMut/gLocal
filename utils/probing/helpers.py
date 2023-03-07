@@ -2,7 +2,6 @@ import json
 import os
 import warnings
 from collections import defaultdict
-from dataclasses import dataclass
 from typing import Dict, Iterator, List
 
 import numpy as np
@@ -10,15 +9,17 @@ import numpy as np
 Array = np.ndarray
 
 
-@dataclass
-class ZippedBatch:
-    batches_i: Iterator
-    batches_j: Iterator
-    times: int = None
+class ZippedBatch(object):
+    def __init__(
+        self, batches_i: Iterator, batches_j: Iterator, times: int = None
+    ) -> None:
+        self.batches_i = batches_i
+        self.batches_j = batches_j
+        self.times = times
 
     @staticmethod
     def _repeat(object: Iterator, times: int = None) -> Iterator:
-        """Either repeat the iterator <self.times> times or repeat it infinitely many times."""
+        """Either repeat the iterator <times> times or repeat it infinitely many times."""
         if times is None:
             while True:
                 for x in object:
@@ -29,6 +30,7 @@ class ZippedBatch:
                     yield x
 
     def _zip_batches(self) -> Iterator:
+        """Zip batches into a single zipped batch iterator."""
         if len(self.batches_j) > len(self.batches_i):
             batches_i_repeated = self._repeat(self.batches_i, self.times)
             zipped_batches = zip(batches_i_repeated, self.batches_j)
