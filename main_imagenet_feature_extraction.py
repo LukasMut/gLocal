@@ -147,7 +147,7 @@ def extract(
 
     for split in splits:
         imagenet_split_set = ImageDataset(
-            os.path.join(imagenet_root, '_'.join((split, "set"))),
+            os.path.join(imagenet_root, "_".join((split, "set"))),
             out_path=os.path.join(out_path, split),
             backend=extractor.get_backend(),
             transforms=extractor.get_transformations(

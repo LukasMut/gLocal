@@ -413,15 +413,6 @@ def run(
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
     extractor = load_extractor(model_cfg)
-    """
-    from thingsvision.utils.data import ImageDataset
-    imagenet_train_set = ImageDataset(
-            root=imagenet_root,
-            out_path='./test_features',
-            backend=extractor.get_backend(),
-            transforms=extractor.get_transformations(resize_dim=256, crop_dim=224) # set input dimensionality to whatever is needed for your pretrained model
-            )
-    """
     imagenet_train_set = ImageFolder(
         os.path.join(imagenet_root, "train_set"),
         extractor.get_transformations(resize_dim=256, crop_dim=224),

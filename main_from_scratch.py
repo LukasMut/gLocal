@@ -324,9 +324,13 @@ def run(
         )
         """
         # TODO: are those the right transformations? & are we using -aligned- triplets?
-        train_triplets = data.THINGSTriplet(root=data_root, transform=extractor.get_transformations())
+        train_triplets = data.THINGSTriplet(
+            root=data_root, transform=extractor.get_transformations()
+        )
         train_triplets.triplets = np.array(triplet_partitioning["train"])
-        val_triplets = data.THINGSTriplet(root=data_root, transform=extractor.get_transformations())
+        val_triplets = data.THINGSTriplet(
+            root=data_root, transform=extractor.get_transformations()
+        )
         val_triplets.triplets = np.array(triplet_partitioning["val"])
 
         train_batches_things = get_batches(
