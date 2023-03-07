@@ -43,7 +43,7 @@ class ZippedBatch:
         return zipped_batches
 
     def __iter__(self) -> Iterator:
-        return self._zip_batches()
+        return iter(self._zip_batches())
 
     def __len__(self) -> int:
         return self.length
