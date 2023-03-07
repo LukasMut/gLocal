@@ -6,7 +6,7 @@ import warnings
 from datetime import datetime
 from functools import partial
 from multiprocessing import Pool, get_context
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -205,7 +205,35 @@ def regress(
     return acc, preds
 
 
-def load_dataset(name: str, data_dir: str, train: bool, transform=None):
+def embed_dataset(dataset, embeddings):
+    """ Wraps a dataset such that it uese the given embeddings as features."""
+    def __getitem__(self, idx):
+        if hasattr(self, "targets"):
+            label = self.targets[idx]
+        else:
+            label = self._labels[idx]
+        embedding = embeddings[idx]
+
+        if self.target_transform:
+            label = self.target_transform(label)
+        return embedding, label
+
+    return type(
+        dataset.__name__,
+        (dataset, embeddings),
+        {
+            "__getitem__": __getitem__,
+        },
+    )
+
+
+def load_dataset(
+    name: str,
+    data_dir: str,
+    train: bool,
+    transform=None,
+    embeddings: Optional[Array] = None,
+):
     if name == "cifar100":
         dataset = CIFAR100(
             root=data_dir,
@@ -222,7 +250,14 @@ def load_dataset(name: str, data_dir: str, train: bool, transform=None):
         )
     else:
         raise ValueError("\nUnknown dataset\n")
+
+    if embeddings is not None:
+        dataset = embed_dataset(dataset, embeddings)
     return dataset
+
+
+def is_embedding_source(source):
+    return source not in ["torchvision", "custom"]
 
 
 def get_features_targets(
@@ -234,18 +269,20 @@ def get_features_targets(
     data_cfg,
     batch_size,
     train,
-    embeddings_root=None,
     ids_subset=None,
     n_batches=1,
     shuffle=False,
     device: str = "cpu",
+    embeddings: Optional[Array] = None,
 ):
     ids_subset = class_ids if ids_subset is None else ids_subset
 
-    if embeddings_root:
-        embeddings = utils.evaluation.load_embeddings(
-            embeddings_root=embeddings_root,
-            module="embeddings" if module == "penultimate" else "logits",
+    if is_embedding_source(source):
+        dataset = load_dataset(
+            name=data_cfg.name,
+            data_dir=data_cfg.root,
+            train=train,
+            embeddings=embeddings,
         )
     else:
         extractor = get_extractor(
@@ -255,12 +292,12 @@ def get_features_targets(
             pretrained=True,
             model_parameters=model_params,
         )
-    dataset = load_dataset(
-        name=data_cfg.name,
-        data_dir=data_cfg.root,
-        train=train,
-        transform=extractor.get_transformations(),
-    )
+        dataset = load_dataset(
+            name=data_cfg.name,
+            data_dir=data_cfg.root,
+            train=train,
+            transform=extractor.get_transformations(),
+        )
     features_all = []
     Y_all = []
     for i_batch in range(n_batches):
@@ -309,8 +346,10 @@ def get_features_targets(
                 module_name=module,
                 flatten_acts=False,
             )
-            features = features[:, 0]  # select classifier token
+            features = features[:, 0].clone()  # select classifier token
             features = features.reshape((features.shape[0], -1))
+        elif is_embedding_source(source):
+            features = X
         else:
             features = extractor.extract_features(
                 batches=X,
@@ -323,12 +362,11 @@ def get_features_targets(
     return features_all, Y_all
 
 
-def create_config_dicts(args) -> Tuple[FrozenDict, FrozenDict]:
+def create_config_dicts(args, embedding_keys=None) -> Tuple[FrozenDict, FrozenDict]:
     """Create data and model config dictionaries."""
     model_config = utils.evaluation.load_model_config(args.model_dict_path)
     model_cfg = config_dict.ConfigDict()
     data_cfg = config_dict.ConfigDict()
-    model_cfg.names = args.model_names
     model_cfg.modules = get_module_names(model_config, model_cfg.names, args.module)
     model_cfg.module_type = args.module
     model_cfg.sources = args.sources
@@ -338,6 +376,11 @@ def create_config_dicts(args) -> Tuple[FrozenDict, FrozenDict]:
     data_cfg.name = args.dataset
     data_cfg.category = None
     data_cfg = config_dict.FrozenConfigDict(data_cfg)
+    if embedding_keys is not None:
+        model_cfg.embeddings_root = args.embeddings_root.split("/")[-1]
+        model_cfg.names = embedding_keys
+    else:
+        model_cfg.names = args.model_names
     return model_cfg, data_cfg
 
 
@@ -535,7 +578,15 @@ if __name__ == "__main__":
     n_shot = args.n_shot
     n_test = args.n_test
     device = torch.device(args.device)
-    model_cfg, data_cfg = create_config_dicts(args)
+
+    if args.embeddings_root is not None:
+        embeddings = utils.evaluation.load_embeddings(
+            embeddings_root=args.embeddings_root,
+            module="embeddings" if args.module == "penultimate" else "logits",
+        )
+    else:
+        embeddings = None
+    model_cfg, data_cfg = create_config_dicts(args, embeddings.keys())
 
     # Load transforms and things embeddings
     features_things = utils.evaluation.load_features(path=args.things_embeddings_path)
@@ -572,7 +623,7 @@ if __name__ == "__main__":
                 continue
             args.n_shot = shots
             args.regressor_type = regressor_type
-            model_cfg, data_cfg = create_config_dicts(args)
+            model_cfg, data_cfg = create_config_dicts(args, embeddings.keys())
 
             if False:  # args.device == "cpu":
                 model_names = args.model_names
@@ -585,7 +636,7 @@ if __name__ == "__main__":
                     model_cfgs.append(create_config_dicts(mod_args)[0])
 
                 # args.n_shot = shots
-                _, data_cfg = create_config_dicts(args)
+                _, data_cfg = create_config_dicts(args, embeddings.keys())
                 runp = partial(
                     run,
                     n_shot=args.n_shot,
