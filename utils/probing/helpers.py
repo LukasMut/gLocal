@@ -2,6 +2,7 @@ import json
 import os
 import warnings
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Dict, Iterator, List
 
 import numpy as np
@@ -9,27 +10,43 @@ import numpy as np
 Array = np.ndarray
 
 
-def repeat(object: Iterator, times=None) -> Iterator:
-    """Either repeat the iterator "times" times or repeat it infinitely many times."""
-    if times is None:
-        while True:
-            for x in object:
-                yield x
-    else:
-        for _ in range(times):
-            for x in object:
-                yield x
+@dataclass
+class ZippedBatch:
+    batches_i: Iterator
+    batches_j: Iterator
+    times: int = None
 
+    @staticmethod
+    def _repeat(object: Iterator, times: int = None) -> Iterator:
+        """Either repeat the iterator <self.times> times or repeat it infinitely many times."""
+        if times is None:
+            while True:
+                for x in object:
+                    yield x
+        else:
+            for _ in range(times):
+                for x in object:
+                    yield x
 
-def zip_batches(
-    train_batches_things: Iterator, train_batches_imagenet: Iterator
-) -> Iterator:
-    if len(train_batches_imagenet) > len(train_batches_things):
-        train_batches_things = repeat(train_batches_things)
-    elif len(train_batches_imagenet) < len(train_batches_things):
-        train_batches_imagenet = repeat(train_batches_imagenet)
-    train_batches = zip(train_batches_things, train_batches_imagenet)
-    return train_batches
+    def _zip_batches(self) -> Iterator:
+        if len(self.batches_j) > len(self.batches_i):
+            batches_i_repeated = self._repeat(self.batches_i, self.times)
+            zipped_batches = zip(batches_i_repeated, self.batches_j)
+            self.length = len(self.batches_j)
+        elif len(self.batches_j) < len(self.batches_i):
+            batches_j_repeated = self._repeat(self.batches_j, self.times)
+            zipped_batches = zip(self.batches_i, batches_j_repeated)
+            self.length = len(self.batches_i)
+        else:
+            zipped_batches = zip(self.batches_i, self.batches_j)
+            self.length = len(self.batches_i)
+        return zipped_batches
+
+    def __iter__(self) -> Iterator:
+        return self._zip_batches()
+
+    def __len__(self) -> int:
+        return self.length
 
 
 def load_triplets(data_root: str) -> Array:

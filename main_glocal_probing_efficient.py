@@ -81,7 +81,7 @@ def parseargs():
         default=1e-3,
         nargs="+",
         help="Relative contribution of the l2 or identity regularization penality",
-        choices=[1., 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+        choices=[1.0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
     )
     aa(
         "--alphas",
@@ -427,7 +427,9 @@ def run(
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
     imagenet_train_features, imagenet_val_features = get_imagenet_features(
-        root=imagenet_features_root, format=features_format, device="cuda" if device == "gpu" else device
+        root=imagenet_features_root,
+        format=features_format,
+        device="cuda" if device == "gpu" else device,
     )
     triplets = utils.probing.load_triplets(data_root)
     features = (
@@ -476,10 +478,10 @@ def run(
             train=True,
             num_workers=num_processes,
         )
-        train_batches = utils.probing.zip_batches(
+        train_batches = utils.probing.ZippedBatch(
             train_batches_things, train_batches_imagenet
         )
-        val_batches = utils.probing.zip_batches(
+        val_batches = utils.probing.ZippedBatch(
             val_batches_things, val_batches_imagenet
         )
         glocal_probe = utils.probing.GlocalFeatureProbe(
