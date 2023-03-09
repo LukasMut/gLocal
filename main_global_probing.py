@@ -380,8 +380,8 @@ def run(
         trainer = Trainer(
             accelerator=device,
             callbacks=callbacks,
-            # strategy="ddp_spawn" if device == "cpu" else None,
-            strategy="ddp",
+            strategy="ddp_spawn" if device == "cpu" else None,
+            # strategy="ddp",
             max_epochs=optim_cfg["max_epochs"],
             min_epochs=optim_cfg["min_epochs"],
             devices=num_processes if device == "cpu" else "auto",
