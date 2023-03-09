@@ -175,10 +175,10 @@ def get_batches(triplets: Tensor, batch_size: int, train: bool) -> Iterator:
     batches = DataLoader(
         dataset=triplets,
         batch_size=batch_size,
-        shuffle=True if train else False,
+        shuffle=train,
         num_workers=0,
         drop_last=False,
-        pin_memory=True if train else False,
+        pin_memory=True,
     )
     return batches
 
