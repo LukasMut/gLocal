@@ -29,6 +29,7 @@ class GlobalProbe(pl.LightningModule):
         self.use_bias = optim_cfg["use_bias"]
         self.scale = optim_cfg["sigma"]
         self.reg = optim_cfg["reg"]
+        self.max_epochs = optim_cfg["max_epochs"]
         self.loss_fun = TripletLoss(temperature=1.0)
         initialization = self.get_initialization()
 
@@ -202,4 +203,8 @@ class GlobalProbe(pl.LightningModule):
             raise ValueError(
                 "\nUse Adam or SGD for learning a linear transformation of a network's feature space.\n"
             )
-        return optimizer
+        # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.max_epochs, last_epochs=-1, verbose=True)
+        scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, total_iters=self.max_epochs, last_epoch=-1, verbose=True
+        )
+        return [optimizer], [scheduler]

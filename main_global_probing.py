@@ -2,14 +2,14 @@ import argparse
 import os
 import pickle
 import warnings
-from random import choices
 from typing import Any, Callable, Dict, Iterator, List, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
+                                         ModelCheckpoint)
 from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -105,7 +105,7 @@ def parseargs():
         "--burnin",
         type=int,
         help="Minimum number of epochs to perform finetuning",
-        default=10,
+        default=15,
     )
     aa(
         "--patience",
@@ -178,7 +178,6 @@ def get_batches(triplets: Tensor, batch_size: int, train: bool) -> Iterator:
         shuffle=train,
         num_workers=0,
         drop_last=False,
-        pin_memory=True,
     )
     return batches
 
@@ -202,7 +201,8 @@ def get_callbacks(optim_cfg: FrozenDict, steps: int = 20) -> List[Callable]:
         verbose=True,
         check_finite=True,
     )
-    callbacks = [checkpoint_callback, early_stopping]
+    lr_monitor = LearningRateMonitor(logging_interval="step")
+    callbacks = [checkpoint_callback, early_stopping, lr_monitor]
     return callbacks
 
 
@@ -338,11 +338,11 @@ def run(
     """Run optimization process."""
     callbacks = get_callbacks(optim_cfg)
     triplets = utils.probing.load_triplets(data_root)
-    # features -= features.mean(axis=0) # center input features
-    # features = utils.probing.standardize(features) # z-transform / standardize input features
+    things_mean = features.mean()
+    things_std = features.std()
     features = (
-        features - features.mean()
-    ) / features.std()  # subtract mean and normalize by standard deviation
+        features - things_mean
+    ) / things_std  # subtract mean and normalize by standard deviation
     objects = np.arange(n_objects)
     # Perform k-fold cross-validation with k = 3 or k = 4
     kf = KFold(n_splits=optim_cfg["n_folds"], random_state=rnd_seed, shuffle=True)
@@ -403,7 +403,7 @@ def run(
     if optim_cfg["use_bias"]:
         transformation["bias"] = linear_probe.transform_b.data.detach().cpu().numpy()
     ooo_choices = np.concatenate(ooo_choices)
-    return ooo_choices, cv_results, transformation
+    return ooo_choices, cv_results, transformation, things_mean, things_std
 
 
 if __name__ == "__main__":
@@ -414,7 +414,7 @@ if __name__ == "__main__":
     features = load_features(args.probing_root)
     model_features = features[args.source][args.model][args.module]
     optim_cfg = create_optimization_config(args)
-    ooo_choices, cv_results, transform = run(
+    ooo_choices, cv_results, transform, things_mean, things_std = run(
         features=model_features,
         model=args.model,
         module=args.module,
@@ -449,8 +449,17 @@ if __name__ == "__main__":
     if optim_cfg["use_bias"]:
         with open(os.path.join(out_path, "transform.npz"), "wb") as f:
             np.savez_compressed(
-                file=f, weights=transform["weights"], bias=transform["bias"]
+                file=f,
+                weights=transform["weights"],
+                bias=transform["bias"],
+                mean=things_mean,
+                std=things_std,
             )
     else:
         with open(os.path.join(out_path, "transform.npz"), "wb") as f:
-            np.savez_compressed(file=f, weights=transform["weights"])
+            np.savez_compressed(
+                file=f,
+                weights=transform["weights"],
+                mean=things_mean,
+                std=things_std,
+            )

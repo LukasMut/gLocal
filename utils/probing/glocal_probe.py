@@ -40,6 +40,7 @@ class GlocalProbe(pl.LightningModule):
             "use_bias"
         ]  # whether or not to use a bias for the probe
         self.module = model_cfg["module"]
+        self.max_epochs = model_cfg["max_epochs"]
 
         self.global_loss_fun = TripletLoss(temperature=1.0)
         self.local_loss_fun = ContrastiveLoss(temperature=self.temp)
@@ -217,7 +218,9 @@ class GlocalProbe(pl.LightningModule):
         self.log("train_acc", acc, on_epoch=True)
         return loss
 
-    def validation_step(self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int):
+    def validation_step(
+        self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int
+    ):
         loss, acc = self._shared_eval_step(batch, batch_idx)
         metrics = {"val_acc": acc, "val_loss": loss}
         self.log_dict(metrics)
@@ -229,7 +232,9 @@ class GlocalProbe(pl.LightningModule):
         self.log_dict(metrics)
         return metrics
 
-    def _shared_eval_step(self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int):
+    def _shared_eval_step(
+        self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int
+    ):
         things_objects, (imagenet_images, _) = batch
         imagenet_features = self.teacher_extractor.extract_features(
             batches=imagenet_images.unsqueeze(0),
@@ -273,7 +278,11 @@ class GlocalProbe(pl.LightningModule):
             raise ValueError(
                 "\nUse Adam or SGD for learning a linear transformation of a network's feature space.\n"
             )
-        return optimizer
+        # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.max_epochs, last_epochs=-1, verbose=True)
+        scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, total_iters=self.max_epochs, last_epoch=-1, verbose=True
+        )
+        return [optimizer], [scheduler]
 
 
 class GlocalFeatureProbe(pl.LightningModule):
@@ -302,6 +311,7 @@ class GlocalFeatureProbe(pl.LightningModule):
         self.use_bias = optim_cfg[
             "use_bias"
         ]  # whether or not to use a bias for the probe
+        self.max_epochs = optim_cfg["max_epochs"]
 
         self.global_loss_fun = TripletLoss(temperature=1.0)
         self.local_loss_fun = ContrastiveLoss(temperature=self.temp)
@@ -519,4 +529,8 @@ class GlocalFeatureProbe(pl.LightningModule):
             raise ValueError(
                 "\nUse Adam or SGD for learning a linear transformation of a network's feature space.\n"
             )
-        return optimizer
+        # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.max_epochs, last_epochs=-1, verbose=True)
+        scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, total_iters=self.max_epochs, last_epoch=-1, verbose=True
+        )
+        return [optimizer], [scheduler]

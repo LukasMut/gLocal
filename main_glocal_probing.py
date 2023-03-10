@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
+                                         ModelCheckpoint)
 from sklearn.model_selection import KFold
 from thingsvision import get_extractor
 from torch.utils.data import DataLoader
@@ -138,7 +139,7 @@ def parseargs():
         "--burnin",
         type=int,
         help="Minimum number of epochs to perform finetuning",
-        default=10,
+        default=15,
     )
     aa(
         "--patience",
@@ -250,7 +251,8 @@ def get_callbacks(optim_cfg: FrozenDict, steps: int = 20) -> List[Callable]:
         verbose=True,
         check_finite=True,
     )
-    callbacks = [checkpoint_callback, early_stopping]
+    lr_monitor = LearningRateMonitor(logging_interval="step")
+    callbacks = [checkpoint_callback, early_stopping, lr_monitor]
     return callbacks
 
 
@@ -422,9 +424,11 @@ def run(
         extractor.get_transformations(resize_dim=256, crop_dim=224),
     )
     triplets = utils.probing.load_triplets(data_root)
+    things_mean = features.mean()
+    things_std = features.std()
     features = (
-        features - features.mean()
-    ) / features.std()  # subtract global mean and normalize by standard deviation of feature matrix
+        features - things_mean
+    ) / things_std  # subtract global mean and normalize by standard deviation of feature matrix
     objects = np.arange(n_objects)
     # For glocal optimization, we don't need to perform k-Fold cross-validation (we can simply set k=4 or 5)
     kf = KFold(n_splits=4, random_state=rnd_seed, shuffle=True)
@@ -512,7 +516,7 @@ def run(
     if optim_cfg["use_bias"]:
         transformation["bias"] = glocal_probe.transform_b.data.detach().cpu().numpy()
     ooo_choices = np.concatenate(ooo_choices)
-    return ooo_choices, cv_results, transformation
+    return ooo_choices, cv_results, transformation, things_mean, things_std
 
 
 if __name__ == "__main__":
@@ -524,7 +528,7 @@ if __name__ == "__main__":
     model_features = features[args.source][args.model][args.module]
     optim_cfg = create_optimization_config(args)
     model_cfg = create_model_config(args)
-    ooo_choices, cv_results, transform = run(
+    ooo_choices, cv_results, transform, things_mean, things_std = run(
         features=model_features,
         imagenet_root=args.imagenet_root,
         data_root=args.data_root,
@@ -559,8 +563,17 @@ if __name__ == "__main__":
     if optim_cfg["use_bias"]:
         with open(os.path.join(out_path, "transform.npz"), "wb") as f:
             np.savez_compressed(
-                file=f, weights=transform["weights"], bias=transform["bias"]
+                file=f,
+                weights=transform["weights"],
+                bias=transform["bias"],
+                mean=things_mean,
+                std=things_std,
             )
     else:
         with open(os.path.join(out_path, "transform.npz"), "wb") as f:
-            np.savez_compressed(file=f, weights=transform["weights"])
+            np.savez_compressed(
+                file=f,
+                weights=transform["weights"],
+                mean=things_mean,
+                std=things_std,
+            )
