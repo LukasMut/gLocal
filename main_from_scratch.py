@@ -195,7 +195,7 @@ def load_features(probing_root: str, subfolder: str = "embeddings") -> Dict[str,
 
 def get_batches(
     dataset: torch.utils.data.Dataset, batch_size: int, train: bool, num_workers: int = 0
-) -> DataLoader:
+) -> Iterator:
     batches = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
@@ -386,11 +386,15 @@ def run(
             train=True,  # TODO ?
             num_workers=NUM_WORKERS,
         )
-        train_batches = utils.probing.helpers.ZippedIter(
-            train_batches_things, train_batches_imagenet
+        train_batches = utils.probing.ZippedBatchLoader(
+            batches_i=train_batches_things,
+            batches_j=train_batches_imagenet,
+            num_workers=num_processes,
         )
-        val_batches = utils.probing.helpers.ZippedIter(
-            val_batches_things, val_batches_imagenet
+        val_batches = utils.probing.ZippedBatchLoader(
+            batches_i=val_batches_things,
+            batches_j=val_batches_imagenet,
+            num_workers=num_processes,
         )
         trainable = utils.probing.FromScratch(
             optim_cfg=optim_cfg,

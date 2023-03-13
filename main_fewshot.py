@@ -367,20 +367,21 @@ def create_config_dicts(args, embedding_keys=None) -> Tuple[FrozenDict, FrozenDi
     model_config = utils.evaluation.load_model_config(args.model_dict_path)
     model_cfg = config_dict.ConfigDict()
     data_cfg = config_dict.ConfigDict()
-    model_cfg.modules = get_module_names(model_config, model_cfg.names, args.module)
     model_cfg.module_type = args.module
     model_cfg.sources = args.sources
     model_cfg.input_dim = args.input_dim
-    model_cfg = config_dict.FrozenConfigDict(model_cfg)
-    data_cfg.root = args.data_root
-    data_cfg.name = args.dataset
-    data_cfg.category = None
-    data_cfg = config_dict.FrozenConfigDict(data_cfg)
     if embedding_keys is not None:
         model_cfg.embeddings_root = args.embeddings_root.split("/")[-1]
         model_cfg.names = embedding_keys
     else:
         model_cfg.names = args.model_names
+    model_cfg.modules = get_module_names(model_config, model_cfg.names, args.module)
+    model_cfg = config_dict.FrozenConfigDict(model_cfg)
+    data_cfg.root = args.data_root
+    data_cfg.name = args.dataset
+    data_cfg.category = None
+    data_cfg = config_dict.FrozenConfigDict(data_cfg)
+
     return model_cfg, data_cfg
 
 
@@ -465,7 +466,7 @@ def run(
                         try:
                             transform = transforms[source][model_name][
                                 model_cfg.module_type
-                            ]["weights"]
+                            ]
                         except KeyError:
                             warnings.warn(
                                 message=f"\nCould not find transformation matrix for {model_name}.\nSkipping evaluation for {model_name} and continuing with next model...\n",
@@ -517,7 +518,7 @@ def run(
                             try:
                                 transform = transforms[source][model_name][
                                     model_cfg.module_type
-                                ]["weights"]
+                                ]
                             except KeyError:
                                 warnings.warn(
                                     message=f"\nCould not find transformation matrix for {model_name}.\nSkipping evaluation for {model_name} and continuing with next model...\n",

@@ -118,13 +118,14 @@ class FromScratch(pl.LightningModule):
         things_batch_images = torch.cat([things_batch[0], things_batch[1], things_batch[2]], dim=0)  # should be [bs*3 x 3 x w x h]
         imagenet_batch_images, imagenet_batch_labels = imagenet_batch
         things_embeddings, imagenet_logits = self(things_batch_images, imagenet_batch_images)
-        #things_embeddings_norm = F.normalize(things_embeddings, dim=1)  # TODO: correct?
+
+        things_embeddings_norm = F.normalize(things_embeddings, dim=1)  # TODO: correct?
 
         # Calculate similarity loss
-        anchor, positive, negative = self.unbind(things_embeddings)  # should be [bs*3 x d] -> 3 x [bs x d]
+        anchor, positive, negative = self.unbind(things_embeddings_norm)  # should be [bs*3 x d] -> 3 x [bs x d]
         dots = self.compute_similarities(anchor, positive, negative)
         similarity_loss = self.similarity_loss_fun(dots)
-        similarity_loss = 0. if torch.isinf(similarity_loss) else similarity_loss
+        #TODO: similarity_loss = 0. if torch.isinf(similarity_loss) else similarity_loss
 
         # Calculate classification loss
         classification_loss = self.classification_loss_fun(imagenet_logits, imagenet_batch_labels)
@@ -228,7 +229,7 @@ class FromScratch(pl.LightningModule):
         loss.backward()
 
     def configure_optimizers(self):
-        if self.optim.lower() == "adam":
+        if self.optim.lower() in ["adam", "adamw"]:
             optimizer = getattr(torch.optim, self.optim.capitalize())
             optimizer = optimizer(
                 self.model.parameters(), lr=self.lr, weight_decay=self.lmbda
