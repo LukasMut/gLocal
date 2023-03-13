@@ -41,7 +41,7 @@ class GlocalProbe(pl.LightningModule):
         ]  # whether or not to use a bias for the probe
         self.max_epochs = optim_cfg["max_epochs"]
         self.module = model_cfg["module"]
-        
+
         self.global_loss_fun = TripletLoss(temperature=1.0)
         self.local_loss_fun = ContrastiveLoss(temperature=self.temp)
         self.teacher_extractor = extractor
@@ -204,6 +204,7 @@ class GlocalProbe(pl.LightningModule):
         global_loss = self.global_loss_fun(dots)
         # apply l1 and l2 regularization during training to prevent overfitting to train objects
         if self.reg == "l2":
+            # regularization towards 0
             complexity_loss = self.l2_regularization()
         else:  # regularization towards the identity
             complexity_loss = self.eye_regularization()
@@ -480,6 +481,7 @@ class GlocalFeatureProbe(pl.LightningModule):
         global_loss = self.global_loss_fun(dots)
         # apply l1 and l2 regularization during training to prevent overfitting to train objects
         if self.reg == "l2":
+            # regularization towards 0
             complexity_loss = self.l2_regularization()
         else:  # regularization towards the identity
             complexity_loss = self.eye_regularization()
