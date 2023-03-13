@@ -206,7 +206,7 @@ def regress(
 
 
 def embed_dataset(dataset, embeddings):
-    """ Wraps a dataset such that it uese the given embeddings as features."""
+    """ Wraps a dataset such that it ueses the given embeddings as features."""
     def __getitem__(self, idx):
         if hasattr(self, "targets"):
             label = self.targets[idx]
