@@ -147,13 +147,13 @@ def parseargs():
         "--burnin",
         type=int,
         help="Minimum number of epochs to perform finetuning",
-        default=15,
+        default=20,
     )
     aa(
         "--patience",
         type=int,
         help="number of checks with no improvement after which training will be stopped",
-        default=10,
+        default=15,
     )
     aa("--device", type=str, default="gpu", choices=["cpu", "gpu"])
     aa(
