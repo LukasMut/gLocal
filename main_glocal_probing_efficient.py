@@ -251,14 +251,14 @@ def get_callbacks(optim_cfg: FrozenDict, steps: int = 20) -> List[Callable]:
         os.makedirs(optim_cfg["ckptdir"])
         print("\nCreating directory for checkpointing...\n")
     checkpoint_callback = ModelCheckpoint(
-        monitor="val_loss",
+        monitor="val_overall_loss",
         dirpath=optim_cfg["ckptdir"],
-        filename="ooo-finetuning-epoch{epoch:02d}-val_loss{val/loss:.2f}",
+        filename="ooo-finetuning-epoch{epoch:02d}-val_overall_loss{val/overall_loss:.2f}",
         auto_insert_metric_name=False,
         every_n_epochs=steps,
     )
     early_stopping = EarlyStopping(
-        monitor="val_loss",
+        monitor="val_overall_loss",
         min_delta=1e-4,
         mode="min",
         patience=optim_cfg["patience"],
