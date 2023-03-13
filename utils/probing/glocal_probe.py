@@ -39,9 +39,9 @@ class GlocalProbe(pl.LightningModule):
         self.use_bias = optim_cfg[
             "use_bias"
         ]  # whether or not to use a bias for the probe
+        self.max_epochs = optim_cfg["max_epochs"]
         self.module = model_cfg["module"]
-        self.max_epochs = model_cfg["max_epochs"]
-
+        
         self.global_loss_fun = TripletLoss(temperature=1.0)
         self.local_loss_fun = ContrastiveLoss(temperature=self.temp)
         self.teacher_extractor = extractor

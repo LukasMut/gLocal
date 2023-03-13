@@ -1,7 +1,9 @@
 import argparse
+import itertools
 import os
 import pickle
 import warnings
+from collections import defaultdict
 from typing import Any, Callable, Dict, Iterator, List, Tuple
 
 import numpy as np
@@ -73,61 +75,67 @@ def parseargs():
         default=1854,
     )
     aa("--optim", type=str, default="Adam", choices=["Adam", "AdamW", "SGD"])
-    aa("--learning_rate", type=float, metavar="eta", default=1e-3)
-    aa("--regularization", type=str, default="l2", choices=["l2", "eye"])
     aa(
-        "--alpha",
-        type=float,
-        default=1e-1,
-        help="Relative contribution of the contrastive loss term",
-        choices=[
-            5e-1,
-            4e-1,
-            3e-1,
-            2e-1,
-            1e-1,
-            5e-2,
-            5e-2,
-            4e-2,
-            3e-2,
-            2e-2,
-            1e-2,
-            1e-2,
-        ],
-    )
-    aa(
-        "--tau",
-        type=float,
-        default=0.1,
-        help="temperature value for contrastive learning objective",
-    )
-    aa(
-        "--lmbda",
+        "--learning_rates",
         type=float,
         default=1e-3,
-        help="Relative contribution of the l2 or identity regularization term",
-        choices=[1e3, 1e2, 1e1, 1.0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+        nargs="+",
+        metavar="eta",
+        choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+    )
+    aa(
+        "--regularization",
+        type=str,
+        default="l2",
+        choices=["l2", "eye"],
+        help="What kind of regularization to be applied",
+    )
+    aa(
+        "--lmbdas",
+        type=float,
+        default=1e-3,
+        nargs="+",
+        help="Relative contribution of the l2 or identity regularization penality",
+        choices=[1.0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+    )
+    aa(
+        "--alphas",
+        type=float,
+        default=1e-1,
+        nargs="+",
+        help="Relative contribution of the contrastive loss term",
+    )
+    aa(
+        "--taus",
+        type=float,
+        default=1,
+        nargs="+",
+        help="temperature value for contrastive learning objective",
+        choices=[1.0, 5e-1, 25e-2, 1e-1, 5e-2, 25e-3, 1e-2],
     )
     aa(
         "--sigma",
         type=float,
         default=1e-3,
         help="Scalar to scale a neural net's pre-transformed representation space prior to the optimization process",
-        choices=[1e-1, 1e-2, 1e-3, 1e-4],
+        choices=[1.0, 1e-1, 1e-2, 1e-3, 1e-4],
     )
     aa(
         "--triplet_batch_size",
         type=int,
         default=256,
-        help="Use power of 2 for running optimization process on GPU",
+        metavar="B_T",
+        help="Use 64 <= B <= 1024 and power of two for running optimization process on GPU",
         choices=[64, 128, 256, 512, 1024],
     )
     aa(
-        "--contrastive_batch_size",
+        "--contrastive_batch_sizes",
         type=int,
         default=1024,
-        help="Use power of 2 for running optimization process on GPU",
-        choices=[128, 256, 512, 1024, 2048, 4096],
+        nargs="+",
+        metavar="B_C",
+        help="Use 64 <= B <= 4096 and power of two for running optimization process on GPU",
+        choices=[64, 128, 256, 512, 1024, 2048, 4096],
     )
     aa(
         "--epochs",
@@ -166,16 +174,37 @@ def parseargs():
     return args
 
 
-def create_optimization_config(args) -> Dict[str, Any]:
+def get_combination(
+    etas: List[float],
+    lambdas: List[float],
+    alphas: List[float],
+    taus: List[float],
+    contrastive_batch_sizes: List[int],
+) -> List[Tuple[float, float, float, float, int]]:
+    combs = []
+    combs.extend(
+        list(itertools.product(etas, lambdas, alphas, taus, contrastive_batch_sizes))
+    )
+    return combs[int(os.environ["SLURM_ARRAY_TASK_ID"])]
+
+
+def create_optimization_config(
+    args,
+    eta: float,
+    lmbda: float,
+    alpha: float,
+    tau: float,
+    contrastive_batch_size: int,
+) -> Dict[str, Any]:
     """Create frozen config dict for optimization hyperparameters."""
     optim_cfg = dict()
     optim_cfg["optim"] = args.optim
-    optim_cfg["lr"] = args.learning_rate
     optim_cfg["reg"] = args.regularization
-    optim_cfg["lmbda"] = args.lmbda
-    optim_cfg["alpha"] = args.alpha
-    optim_cfg["tau"] = args.tau
-    optim_cfg["contrastive_batch_size"] = args.contrastive_batch_size
+    optim_cfg["lr"] = eta
+    optim_cfg["lmbda"] = lmbda
+    optim_cfg["alpha"] = alpha
+    optim_cfg["tau"] = tau
+    optim_cfg["contrastive_batch_size"] = contrastive_batch_size
     optim_cfg["triplet_batch_size"] = args.triplet_batch_size
     optim_cfg["max_epochs"] = args.epochs
     optim_cfg["min_epochs"] = args.burnin
@@ -256,57 +285,56 @@ def get_callbacks(optim_cfg: FrozenDict, steps: int = 20) -> List[Callable]:
     return callbacks
 
 
-def get_mean_cv_acc(
-    cv_results: Dict[str, List[float]], metric: str = "test_acc"
-) -> float:
-    avg_val_acc = np.mean([vals[0][metric] for vals in cv_results.values()])
-    return avg_val_acc
-
-
-def get_mean_cv_loss(
-    cv_results: Dict[str, List[float]], metric: str = "test_loss"
-) -> float:
-    avg_val_loss = np.mean([vals[0][metric] for vals in cv_results.values()])
-    return avg_val_loss
+def get_mean_cv_performances(cv_results: Dict[str, List[float]]) -> Dict[str, float]:
+    return {metric: np.mean(folds) for metric, folds in cv_results.items()}
 
 
 def make_results_df(
     columns: List[str],
-    probing_acc: float,
-    probing_loss: float,
+    probing_performances: Dict[str, float],
     ooo_choices: Array,
     model_name: str,
     module_name: str,
     source: str,
-    reg: str,
-    optim: str,
-    lr: float,
-    alpha: float,
-    lmbda: float,
-    tau: float,
-    bias: bool,
+    optim_cfg: Dict[str, Any],
 ) -> pd.DataFrame:
     probing_results_current_run = pd.DataFrame(index=range(1), columns=columns)
     probing_results_current_run["model"] = model_name
-    probing_results_current_run["probing"] = probing_acc
-    probing_results_current_run["cross-entropy"] = probing_loss
+    probing_results_current_run["probing"] = probing_performances["test_acc"]
+    probing_results_current_run["cross-entropy-overall"] = probing_performances[
+        "test_overall_loss"
+    ]
+    probing_results_current_run["triplet-loss"] = probing_performances[
+        "test_triplet_loss"
+    ]
+    probing_results_current_run["locality-loss"] = probing_performances[
+        "test_contrastive_loss"
+    ]
     # probing_results_current_run["choices"] = [ooo_choices]
     probing_results_current_run["module"] = module_name
     probing_results_current_run["family"] = utils.analyses.get_family_name(model_name)
     probing_results_current_run["source"] = source
-    probing_results_current_run["reg"] = reg
-    probing_results_current_run["alpha"] = alpha
-    probing_results_current_run["lmbda"] = lmbda
-    probing_results_current_run["tau"] = tau
-    probing_results_current_run["optim"] = optim.lower()
-    probing_results_current_run["lr"] = lr
+    probing_results_current_run["reg"] = optim_cfg["reg"]
+    probing_results_current_run["optim"] = optim_cfg["optim"].lower()
+    probing_results_current_run["lr"] = optim_cfg["lr"]
+    probing_results_current_run["alpha"] = optim_cfg["alpha"]
+    probing_results_current_run["lmbda"] = optim_cfg["lmbda"]
+    probing_results_current_run["tau"] = optim_cfg["tau"]
+    probing_results_current_run["sigma"] = optim_cfg["sigma"]
+    probing_results_current_run["bias"] = optim_cfg["use_bias"]
+    probing_results_current_run["contrastive_batch_size"] = optim_cfg[
+        "contrastive_batch_size"
+    ]
+    probing_results_current_run["triplet_batch_size"] = optim_cfg["triplet_batch_size"]
     probing_results_current_run["contrastive"] = True
-    probing_results_current_run["bias"] = bias
     return probing_results_current_run
 
 
 def save_results(
-    args, probing_acc: float, probing_loss: float, ooo_choices: Array
+    args,
+    optim_cfg: Dict[str, Any],
+    probing_performances: Dict[str, float],
+    ooo_choices: Array,
 ) -> None:
     out_path = os.path.join(args.probing_root, "results")
     if not os.path.exists(out_path):
@@ -322,19 +350,12 @@ def save_results(
         )
         probing_results_current_run = make_results_df(
             columns=probing_results_overall.columns.values,
-            probing_acc=probing_acc,
-            probing_loss=probing_loss,
+            probing_performances=probing_performances,
             ooo_choices=ooo_choices,
             model_name=args.model,
             module_name=args.module,
             source=args.source,
-            reg=args.regularization,
-            optim=args.optim,
-            lr=args.learning_rate,
-            alpha=args.alpha,
-            lmbda=args.lmbda,
-            tau=args.tau,
-            bias=args.use_bias,
+            optim_cfg=optim_cfg,
         )
         probing_results = pd.concat(
             [probing_results_overall, probing_results_current_run],
@@ -347,7 +368,9 @@ def save_results(
         columns = [
             "model",
             "probing",
-            "cross-entropy",
+            "cross-entropy-overall",
+            "triplet-loss",
+            "locality-loss",
             # "choices",
             "module",
             "family",
@@ -358,24 +381,20 @@ def save_results(
             "alpha",
             "lambda",
             "tau",
+            "sigma",
             "bias",
+            "contrastive_batch_size",
+            "triplet_batch_size",
             "contrastive",
         ]
         probing_results = make_results_df(
             columns=columns,
-            probing_acc=probing_acc,
-            probing_loss=probing_loss,
+            probing_performances=probing_performances,
             ooo_choices=ooo_choices,
             model_name=args.model,
             module_name=args.module,
             source=args.source,
-            reg=args.regularization,
-            alpha=args.alpha,
-            lmbda=args.lmbda,
-            tau=args.tau,
-            optim=args.optim,
-            lr=args.learning_rate,
-            bias=args.use_bias,
+            optim_cfg=optim_cfg,
         )
         probing_results.to_pickle(os.path.join(out_path, "probing_results.pkl"))
 
@@ -432,9 +451,9 @@ def run(
     objects = np.arange(n_objects)
     # For glocal optimization, we don't need to perform k-Fold cross-validation (we can simply set k=4 or 5)
     kf = KFold(n_splits=4, random_state=rnd_seed, shuffle=True)
-    cv_results = {}
+    cv_results = defaultdict(list)
     ooo_choices = []
-    for k, (train_idx, _) in tqdm(enumerate(kf.split(objects), start=1), desc="Fold"):
+    for train_idx, _ in tqdm(kf.split(objects), desc="Fold"):
         train_objects = objects[train_idx]
         # partition triplets into disjoint object sets
         triplet_partitioning = utils.probing.partition_triplets(
@@ -476,7 +495,7 @@ def run(
         train_batches = utils.probing.ZippedBatchLoader(
             batches_i=train_batches_things,
             batches_j=train_batches_imagenet,
-            num_workers=num_processes,
+            num_workers=8,
         )
         val_batches = utils.probing.ZippedBatchLoader(
             batches_i=val_batches_things,
@@ -502,14 +521,15 @@ def run(
             gradient_clip_algorithm="norm",
         )
         trainer.fit(glocal_probe, train_batches, val_batches)
-        val_performance = trainer.test(
+        test_performances = trainer.test(
             glocal_probe,
             dataloaders=val_batches,
         )
         predictions = trainer.predict(glocal_probe, dataloaders=val_batches_things)
         predictions = torch.cat(predictions, dim=0).tolist()
         ooo_choices.append(predictions)
-        cv_results[f"fold_{k:02d}"] = val_performance
+        for metric, performance in test_performances:
+            cv_results[metric].append(performance)
         break
     transformation = {}
     transformation["weights"] = glocal_probe.transform_w.data.detach().cpu().numpy()
@@ -526,7 +546,23 @@ if __name__ == "__main__":
     seed_everything(args.rnd_seed, workers=True)
     features = load_features(args.probing_root)
     model_features = features[args.source][args.model][args.module]
-    optim_cfg = create_optimization_config(args)
+
+    eta, lmbda, alpha, tau, contrastive_batch_size = get_combination(
+        etas=args.learning_rates,
+        lambdas=args.lmbdas,
+        alphas=args.alphas,
+        taus=args.taus,
+        contrastive_batch_sizes=args.contrastive_batch_sizes,
+    )
+
+    optim_cfg = create_optimization_config(
+        args=args,
+        eta=eta,
+        lmbda=lmbda,
+        alpha=alpha,
+        tau=tau,
+        contrastive_batch_size=contrastive_batch_size,
+    )
     model_cfg = create_model_config(args)
     ooo_choices, cv_results, transform, things_mean, things_std = run(
         features=model_features,
@@ -539,29 +575,31 @@ if __name__ == "__main__":
         rnd_seed=args.rnd_seed,
         num_processes=args.num_processes,
     )
-    avg_cv_acc = get_mean_cv_acc(cv_results)
-    avg_cv_loss = get_mean_cv_loss(cv_results)
+    probing_performances = get_mean_cv_performances(cv_results)
     save_results(
-        args, probing_acc=avg_cv_acc, probing_loss=avg_cv_loss, ooo_choices=ooo_choices
+        args=args,
+        optim_cfg=optim_cfg,
+        probing_performances=probing_performances,
+        ooo_choices=ooo_choices,
     )
-
     out_path = os.path.join(
         args.probing_root,
         "results",
         args.source,
         args.model,
         args.module,
-        str(args.alpha),
-        str(args.lmbda),
-        str(args.tau),
         args.optim.lower(),
-        str(args.learning_rate),
+        str(args.eta),
+        str(lmbda),
+        str(alpha),
+        str(tau),
+        str(contrastive_batch_size),
     )
     if not os.path.exists(out_path):
         os.makedirs(out_path, exist_ok=True)
 
     if optim_cfg["use_bias"]:
-        with open(os.path.join(out_path, "transform.npz"), "wb") as f:
+        with open(os.path.join(out_path, "transform_with_bias.npz"), "wb") as f:
             np.savez_compressed(
                 file=f,
                 weights=transform["weights"],
@@ -570,7 +608,7 @@ if __name__ == "__main__":
                 std=things_std,
             )
     else:
-        with open(os.path.join(out_path, "transform.npz"), "wb") as f:
+        with open(os.path.join(out_path, "transform_no_bias.npz"), "wb") as f:
             np.savez_compressed(
                 file=f,
                 weights=transform["weights"],
