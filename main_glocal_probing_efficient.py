@@ -3,6 +3,7 @@ import itertools
 import os
 import pickle
 import warnings
+from collections import defaultdict
 from typing import Any, Callable, Dict, Iterator, List, Tuple
 
 import numpy as np
@@ -269,24 +270,13 @@ def get_callbacks(optim_cfg: FrozenDict, steps: int = 20) -> List[Callable]:
     return callbacks
 
 
-def get_mean_cv_acc(
-    cv_results: Dict[str, List[float]], metric: str = "test_acc"
-) -> float:
-    avg_val_acc = np.mean([vals[0][metric] for vals in cv_results.values()])
-    return avg_val_acc
-
-
-def get_mean_cv_loss(
-    cv_results: Dict[str, List[float]], metric: str = "test_loss"
-) -> float:
-    avg_val_loss = np.mean([vals[0][metric] for vals in cv_results.values()])
-    return avg_val_loss
+def get_mean_cv_performances(cv_results: Dict[str, List[float]]) -> Dict[str, float]:
+    return {metric: np.mean(folds) for metric, folds in cv_results.items()}
 
 
 def make_results_df(
     columns: List[str],
-    probing_acc: float,
-    probing_loss: float,
+    probing_performances: Dict[str, float],
     ooo_choices: Array,
     model_name: str,
     module_name: str,
@@ -295,8 +285,16 @@ def make_results_df(
 ) -> pd.DataFrame:
     probing_results_current_run = pd.DataFrame(index=range(1), columns=columns)
     probing_results_current_run["model"] = model_name
-    probing_results_current_run["probing"] = probing_acc
-    probing_results_current_run["cross-entropy"] = probing_loss
+    probing_results_current_run["probing"] = probing_performances["test_acc"]
+    probing_results_current_run["cross-entropy-overall"] = probing_performances[
+        "test_overall_loss"
+    ]
+    probing_results_current_run["triplet-loss"] = probing_performances[
+        "test_triplet_loss"
+    ]
+    probing_results_current_run["locality-loss"] = probing_performances[
+        "test_contrastive_loss"
+    ]
     # probing_results_current_run["choices"] = [ooo_choices]
     probing_results_current_run["module"] = module_name
     probing_results_current_run["family"] = utils.analyses.get_family_name(model_name)
@@ -320,8 +318,7 @@ def make_results_df(
 def save_results(
     args,
     optim_cfg: Dict[str, Any],
-    probing_acc: float,
-    probing_loss: float,
+    probing_performances: Dict[str, float],
     ooo_choices: Array,
 ) -> None:
     out_path = os.path.join(args.probing_root, "results")
@@ -338,8 +335,7 @@ def save_results(
         )
         probing_results_current_run = make_results_df(
             columns=probing_results_overall.columns.values,
-            probing_acc=probing_acc,
-            probing_loss=probing_loss,
+            probing_performances=probing_performances,
             ooo_choices=ooo_choices,
             model_name=args.model,
             module_name=args.module,
@@ -357,7 +353,9 @@ def save_results(
         columns = [
             "model",
             "probing",
-            "cross-entropy",
+            "cross-entropy-overall",
+            "triplet-loss",
+            "locality-loss",
             # "choices",
             "module",
             "family",
@@ -376,8 +374,7 @@ def save_results(
         ]
         probing_results = make_results_df(
             columns=columns,
-            probing_acc=probing_acc,
-            probing_loss=probing_loss,
+            probing_performances=probing_performances,
             ooo_choices=ooo_choices,
             model_name=args.model,
             module_name=args.module,
@@ -442,9 +439,9 @@ def run(
     objects = np.arange(n_objects)
     # For glocal optimization, we don't need to perform k-Fold cross-validation (we can simply set k=4 or 5)
     kf = KFold(n_splits=4, random_state=rnd_seed, shuffle=True)
-    cv_results = {}
+    cv_results = defaultdict(list)
     ooo_choices = []
-    for k, (train_idx, _) in tqdm(enumerate(kf.split(objects), start=1), desc="Fold"):
+    for train_idx, _ in tqdm(kf.split(objects), desc="Fold"):
         train_objects = objects[train_idx]
         # partition triplets into disjoint object sets
         triplet_partitioning = utils.probing.partition_triplets(
@@ -509,14 +506,15 @@ def run(
             gradient_clip_algorithm="norm",
         )
         trainer.fit(glocal_probe, train_batches, val_batches)
-        val_performance = trainer.test(
+        test_performances = trainer.test(
             glocal_probe,
             dataloaders=val_batches,
         )
         predictions = trainer.predict(glocal_probe, dataloaders=val_batches_things)
         predictions = torch.cat(predictions, dim=0).tolist()
         ooo_choices.append(predictions)
-        cv_results[f"fold_{k:02d}"] = val_performance
+        for metric, performance in test_performances:
+            cv_results[metric].append(performance)
         break
     transformation = {}
     transformation["weights"] = glocal_probe.transform_w.data.detach().cpu().numpy()
@@ -562,13 +560,11 @@ if __name__ == "__main__":
         num_processes=args.num_processes,
         features_format=args.features_format,
     )
-    avg_cv_acc = get_mean_cv_acc(cv_results)
-    avg_cv_loss = get_mean_cv_loss(cv_results)
+    probing_performances = get_mean_cv_performances(cv_results)
     save_results(
         args=args,
         optim_cfg=optim_cfg,
-        probing_acc=avg_cv_acc,
-        probing_loss=avg_cv_loss,
+        probing_performances=probing_performances,
         ooo_choices=ooo_choices,
     )
 

@@ -188,7 +188,7 @@ class GlocalProbe(pl.LightningModule):
 
     def training_step(
         self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int
-    ):
+    ) -> Tensor:
         things_objects, (imagenet_images, _) = batch
         imagenet_features = self.teacher_extractor.extract_features(
             batches=imagenet_images.unsqueeze(0),
@@ -214,27 +214,41 @@ class GlocalProbe(pl.LightningModule):
             + self.lmbda * complexity_loss
         )
         acc = self.choice_accuracy(dots)
-        self.log("train_loss", global_loss, on_epoch=True)
-        self.log("train_acc", acc, on_epoch=True)
+        self.log("triplet_acc", acc, on_epoch=True)
+        self.log("triplet_loss", global_loss, on_epoch=True)
+        self.log("local_loss", locality_loss, on_epoch=True)
+        self.log("complexity_loss", complexity_loss, on_epoch=True)
         return loss
 
     def validation_step(
         self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int
-    ):
-        loss, acc = self._shared_eval_step(batch, batch_idx)
-        metrics = {"val_acc": acc, "val_loss": loss}
+    ) -> Dict[str, float]:
+        global_loss, locality_loss, loss, acc = self._shared_eval_step(batch, batch_idx)
+        metrics = {
+            "val_acc": acc,
+            "val_overall_loss": loss,
+            "val_triplet_loss": global_loss,
+            "val_contrastive_loss": locality_loss,
+        }
         self.log_dict(metrics)
         return metrics
 
-    def test_step(self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int):
-        loss, acc = self._shared_eval_step(batch, batch_idx)
-        metrics = {"test_acc": acc, "test_loss": loss}
+    def test_step(
+        self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int
+    ) -> Dict[str, float]:
+        global_loss, locality_loss, loss, acc = self._shared_eval_step(batch, batch_idx)
+        metrics = {
+            "test_acc": acc,
+            "test_overall_loss": loss,
+            "test_triplet_loss": global_loss,
+            "test_contrastive_loss": locality_loss,
+        }
         self.log_dict(metrics)
         return metrics
 
     def _shared_eval_step(
         self, batch: Tuple[Tensor, Tuple[Tensor, Tensor]], batch_idx: int
-    ):
+    ) -> Tuple[float, float, float, float]:
         things_objects, (imagenet_images, _) = batch
         imagenet_features = self.teacher_extractor.extract_features(
             batches=imagenet_images.unsqueeze(0),
@@ -251,7 +265,7 @@ class GlocalProbe(pl.LightningModule):
         locality_loss = self.local_loss_fun(teacher_similarities, student_similarities)
         loss = global_loss + locality_loss
         acc = self.choice_accuracy(similarities)
-        return loss, acc
+        return global_loss, locality_loss, loss, acc
 
     def predict_step(self, batch: Tensor, batch_idx: int):
         things_objects = batch
@@ -476,23 +490,41 @@ class GlocalFeatureProbe(pl.LightningModule):
             + self.lmbda * complexity_loss
         )
         acc = self.choice_accuracy(dots)
-        self.log("train_loss", global_loss, on_epoch=True)
-        self.log("train_acc", acc, on_epoch=True)
+        self.log("triplet_acc", acc, on_epoch=True)
+        self.log("triplet_loss", global_loss, on_epoch=True)
+        self.log("local_loss", locality_loss, on_epoch=True)
+        self.log("complexity_loss", complexity_loss, on_epoch=True)
         return loss
 
-    def validation_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
-        loss, acc = self._shared_eval_step(batch, batch_idx)
-        metrics = {"val_acc": acc, "val_loss": loss}
+    def validation_step(
+        self, batch: Tuple[Tensor, Tensor], batch_idx: int
+    ) -> Dict[str, float]:
+        global_loss, locality_loss, loss, acc = self._shared_eval_step(batch, batch_idx)
+        metrics = {
+            "val_acc": acc,
+            "val_overall_loss": loss,
+            "val_triplet_loss": global_loss,
+            "val_contrastive_loss": locality_loss,
+        }
         self.log_dict(metrics)
         return metrics
 
-    def test_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
-        loss, acc = self._shared_eval_step(batch, batch_idx)
-        metrics = {"test_acc": acc, "test_loss": loss}
+    def test_step(
+        self, batch: Tuple[Tensor, Tensor], batch_idx: int
+    ) -> Dict[str, float]:
+        global_loss, locality_loss, loss, acc = self._shared_eval_step(batch, batch_idx)
+        metrics = {
+            "test_acc": acc,
+            "test_overall_loss": loss,
+            "test_triplet_loss": global_loss,
+            "test_contrastive_loss": locality_loss,
+        }
         self.log_dict(metrics)
         return metrics
 
-    def _shared_eval_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
+    def _shared_eval_step(
+        self, batch: Tuple[Tensor, Tensor], batch_idx: int
+    ) -> Tuple[float, float, float, float]:
         things_objects, imagenet_features = batch
         batch_embeddings, teacher_similarities, student_similarities = self(
             things_objects, imagenet_features
@@ -503,7 +535,7 @@ class GlocalFeatureProbe(pl.LightningModule):
         locality_loss = self.local_loss_fun(teacher_similarities, student_similarities)
         loss = global_loss + locality_loss
         acc = self.choice_accuracy(similarities)
-        return loss, acc
+        return global_loss, locality_loss, loss, acc
 
     def predict_step(self, things_objects: Tensor, batch_idx: int):
         batch_embeddings = self.global_prediction(things_objects)
