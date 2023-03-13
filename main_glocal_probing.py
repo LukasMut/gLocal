@@ -155,7 +155,7 @@ def parseargs():
         help="number of checks with no improvement after which training will be stopped",
         default=10,
     )
-    aa("--device", type=str, default="cpu", choices=["cpu", "gpu"])
+    aa("--device", type=str, default="gpu", choices=["cpu", "gpu"])
     aa(
         "--num_processes",
         type=int,
