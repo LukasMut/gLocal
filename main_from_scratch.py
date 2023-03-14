@@ -8,7 +8,6 @@ import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint, StochasticWeightAveraging
-from pytorch_lightning.plugins import DDPPlugin
 from sklearn.model_selection import KFold
 from thingsvision import get_extractor
 from torch.utils.data import DataLoader
@@ -19,6 +18,7 @@ from tqdm import tqdm
 
 import data
 import utils
+from utils.probing.helpers import model_name_to_thingsvision
 
 NUM_WORKERS = 8
 
@@ -282,15 +282,7 @@ def save_results(
 
 def load_extractor(model_cfg: Dict[str, str]) -> Any:
     model_name = model_cfg["model"]
-    if model_name.startswith("OpenCLIP"):
-        name, variant, data = model_name.split("_")
-        model_params = dict(variant=variant, dataset=data)
-    elif model_name.startswith("clip"):
-        name, variant = model_name.split("_")
-        model_params = dict(variant=variant)
-    else:
-        name = model_name
-        model_params = None
+    name, model_params = model_name_to_thingsvision(model_name)
     extractor = get_extractor(
         model_name=name,
         source=model_cfg["source"],
