@@ -2,7 +2,7 @@ import json
 import os
 import warnings
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -59,3 +59,17 @@ def get_temperature(
             f"\nMissing temperature value for {model} and {module} layer.\nSetting temperature value to 1.\nThis may cause optimization problems during linear probing.\n"
         )
     return temperature
+
+
+def model_name_to_thingsvision(model_name: str) -> Tuple[str, Optional[Dict]]:
+    """Split up a model name for thingsvision."""
+    if model_name.startswith("OpenCLIP"):
+        name, variant, data = model_name.split("_")
+        model_params = dict(variant=variant, dataset=data)
+    elif model_name.startswith("clip"):
+        name, variant = model_name.split("_")
+        model_params = dict(variant=variant)
+    else:
+        name = model_name
+        model_params = None
+    return name, model_params
