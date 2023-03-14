@@ -1,27 +1,23 @@
 import argparse
-import copy
+import itertools
 import os
 import pickle
 import warnings
 from datetime import datetime
-from functools import partial
-from multiprocessing import Pool, get_context
 from typing import Any, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
 from ml_collections import config_dict
-from sklearn.linear_model import LogisticRegressionCV
-from sklearn.metrics import accuracy_score, make_scorer
-from sklearn.neighbors import KNeighborsRegressor
 from thingsvision import get_extractor
-from torchvision.datasets import CIFAR100, DTD
-from tqdm import tqdm
 
 import utils
+from downstream.fewshot.data import load_dataset
+from downstream.fewshot.predictors import train_regression, train_knn, test_regression
+from downstream.fewshot.utils import is_embedding_source, apply_transform
 from main_model_sim_eval import get_module_names
+from utils.probing.helpers import model_name_to_thingsvision
 
 Array = np.ndarray
 Tensor = torch.Tensor
@@ -135,137 +131,13 @@ def parseargs():
     return args
 
 
-def train_regression(train_targets: Array, train_features: Array, k: int = None):
-    n_train = train_features.shape[0]
-    print("N. train:", n_train)
-
-    reg = LogisticRegressionCV(
-        Cs=(1e-4, 1e-3, 1e-2, 1e-1, 1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6),
-        fit_intercept=True,
-        penalty="l2",
-        # scoring=make_scorer(accuracy_score),
-        cv=k,
-        max_iter=500,
-        solver="sag",
-    )
-
-    reg.fit(train_features, train_targets)
-
-    return reg
-
-
-def train_knn(train_targets: Array, train_features: Array, k: int = 1):
-    n_train = train_features.shape[0]
-    print("N. train:", n_train)
-
-    reg = KNeighborsRegressor(
-        n_neighbors=k,
-        algorithm="ball_tree",
-    )
-
-    reg.fit(train_features, train_targets)
-
-    return reg
-
-
-def test_regression(
-    regressor,
-    test_targets: Array,
-    test_features: Array,
-):
-    n_test = test_features.shape[0]
-    print("N. test:", n_test)
-
-    preds = regressor.predict(test_features)
-    acc = np.sum([p == t for p, t in zip(preds, test_targets)]) / len(preds)
-    try:
-        regularization_strength = regressor.C_
-        print("Accuracy: %.3f, Regularization:" % acc, regularization_strength)
-    except AttributeError:
-        print("Accuracy: %.3f" % acc)
-
-    return acc, preds
-
-
-def regress(
-    train_targets: Array,
-    train_features: Array,
-    test_targets: Array,
-    test_features: Array,
-    k: int = None,
-    regressor: str = "ridge",
-):
-    if regressor == "ridge":
-        reg = train_regression(train_targets, train_features, k)
-    if regressor == "knn":
-        reg = train_knn(train_targets, train_features)
-    else:
-        raise ValueError(f"Unknown regressor: {regressor}")
-    acc, preds = test_regression(reg, test_targets, test_features)
-    return acc, preds
-
-
-def embed_dataset(dataset, embeddings):
-    """ Wraps a dataset such that it ueses the given embeddings as features."""
-    def __getitem__(self, idx):
-        if hasattr(self, "targets"):
-            label = self.targets[idx]
-        else:
-            label = self._labels[idx]
-        embedding = embeddings[idx]
-
-        if self.target_transform:
-            label = self.target_transform(label)
-        return embedding, label
-
-    return type(
-        dataset.__name__,
-        (dataset, embeddings),
-        {
-            "__getitem__": __getitem__,
-        },
-    )
-
-
-def load_dataset(
-    name: str,
-    data_dir: str,
-    train: bool,
-    transform=None,
-    embeddings: Optional[Array] = None,
-):
-    if name == "cifar100":
-        dataset = CIFAR100(
-            root=data_dir,
-            train=train,
-            download=True,
-            transform=transform,
-        )
-    elif name == "DTD":
-        dataset = DTD(
-            root=data_dir,
-            split="train" if train else "test",
-            download=True,
-            transform=transform,
-        )
-    else:
-        raise ValueError("\nUnknown dataset\n")
-
-    if embeddings is not None:
-        dataset = embed_dataset(dataset, embeddings)
-    return dataset
-
-
-def is_embedding_source(source):
-    return source not in ["torchvision", "custom"]
-
-
 def get_features_targets(
     class_ids,
     model_name,
     model_params,
     source,
     module,
+    module_type,
     data_cfg,
     batch_size,
     train,
@@ -276,8 +148,10 @@ def get_features_targets(
     embeddings: Optional[Array] = None,
 ):
     ids_subset = class_ids if ids_subset is None else ids_subset
+    dataset_is_embedded = is_embedding_source(source)
 
-    if is_embedding_source(source):
+    if dataset_is_embedded:
+        # Load the dataset from an embedding source
         dataset = load_dataset(
             name=data_cfg.name,
             data_dir=data_cfg.root,
@@ -285,19 +159,34 @@ def get_features_targets(
             embeddings=embeddings,
         )
     else:
-        extractor = get_extractor(
-            model_name=model_name,
-            source=source,
-            device=device,
-            pretrained=True,
-            model_parameters=model_params,
-        )
-        dataset = load_dataset(
-            name=data_cfg.name,
-            data_dir=data_cfg.root,
-            train=train,
-            transform=extractor.get_transformations(),
-        )
+        complete_model_name = model_name + "_" + model_params["variant"]
+        try:
+            # Try to load the embeddings from disk
+            embeddings_path = os.path.join(data_cfg.embeddings_root, source, complete_model_name, module_type)
+            with open(os.path.join(embeddings_path, "embeddings.pkl"), "rb") as f:
+                embeddigns = pickle.load(f)
+            dataset = load_dataset(
+                    name=data_cfg.name,
+                    data_dir=data_cfg.root,
+                    train=train,
+                    embeddings=embeddigns,
+            )
+            dataset_is_embedded = True
+        except (FileNotFoundError, TypeError):
+            # If the embeddings are not found or embeddings_rood is None, extract embeddings
+            extractor = get_extractor(
+                model_name=model_name,
+                source=source,
+                device=device,
+                pretrained=True,
+                model_parameters=model_params,
+            )
+            dataset = load_dataset(
+                name=data_cfg.name,
+                data_dir=data_cfg.root,
+                train=train,
+                transform=extractor.get_transformations(),
+            )
     features_all = []
     Y_all = []
     for i_batch in range(n_batches):
@@ -336,20 +225,20 @@ def get_features_targets(
                 break
         Y = np.array(Y)
 
-        if (
-            source == "torchvision"
-            and module in ["penultimate", "encoder.ln"]
-            and model_name.startswith("vit")
-        ):
+        if dataset_is_embedded:
+            features = torch.stack(list(itertools.chain.from_iterable(X)), dim=0).detach().cpu().numpy()
+        elif (
+                    source == "torchvision"
+                    and module in ["penultimate", "encoder.ln"]
+                    and model_name.startswith("vit")
+            ):
             features = extractor.extract_features(
-                batches=X,
-                module_name=module,
-                flatten_acts=False,
+                    batches=X,
+                    module_name=module,
+                    flatten_acts=False,
             )
             features = features[:, 0].clone()  # select classifier token
             features = features.reshape((features.shape[0], -1))
-        elif is_embedding_source(source):
-            features = X
         else:
             features = extractor.extract_features(
                 batches=X,
@@ -359,6 +248,7 @@ def get_features_targets(
 
         features_all.append(features)
         Y_all.append(Y)
+
     return features_all, Y_all
 
 
@@ -374,6 +264,12 @@ def create_config_dicts(args, embedding_keys=None) -> Tuple[FrozenDict, FrozenDi
         model_cfg.embeddings_root = args.embeddings_root.split("/")[-1]
         model_cfg.names = embedding_keys
     else:
+        if hasattr(args, "embeddings_root"):
+            embeddings_root = args.embeddings_root
+        else:
+            embeddings_root = None
+        model_cfg.embeddings_root = embeddings_root
+        data_cfg.embeddings_root = embeddings_root
         model_cfg.names = args.model_names
     model_cfg.modules = get_module_names(model_config, model_cfg.names, args.module)
     model_cfg = config_dict.FrozenConfigDict(model_cfg)
@@ -383,21 +279,6 @@ def create_config_dicts(args, embedding_keys=None) -> Tuple[FrozenDict, FrozenDi
     data_cfg = config_dict.FrozenConfigDict(data_cfg)
 
     return model_cfg, data_cfg
-
-
-def apply_transform(
-    features: Array,
-    transform: Array,
-    things_mean: float,
-    things_std: float,
-    transform_type: str = None,
-):
-    features = (features - things_mean) / things_std
-    features = features @ transform["weights"]
-    if "bias" in transform:
-        features += transform["bias"]
-    features = torch.from_numpy(features)
-    return features
 
 
 def run(
@@ -421,16 +302,9 @@ def run(
             model_cfg.names, model_cfg.modules, model_cfg.sources
         ):
             # Resolve family name
-            if model_name.startswith("OpenCLIP"):
-                name, variant, data = model_name.split("_")
-                model_params = dict(variant=variant, dataset=data)
-            elif model_name.startswith("clip"):
-                name, variant = model_name.split("_")
-                model_params = dict(variant=variant)
-            else:
-                name = model_name
-                model_params = None
+            name, model_params = model_name_to_thingsvision(model_name)
             family_name = utils.analyses.get_family_name(model_name)
+            module_type = model_cfg.module_type
 
             # Extract train features
             train_features_original_all, train_targets_all = get_features_targets(
@@ -439,6 +313,7 @@ def run(
                 model_params,
                 source,
                 module,
+                module_type,
                 data_cfg,
                 n_shot,
                 train=True,
@@ -503,6 +378,7 @@ def run(
                         model_params,
                         source,
                         module,
+                        module_type,
                         data_cfg,
                         n_test,
                         train=False,
@@ -626,52 +502,19 @@ if __name__ == "__main__":
             args.regressor_type = regressor_type
             model_cfg, data_cfg = create_config_dicts(args, embeddings.keys())
 
-            if False:  # args.device == "cpu":
-                model_names = args.model_names
-                sources = args.sources
-                model_cfgs = []
-                for mod, src in zip(model_names, sources):
-                    mod_args = copy.copy(args)
-                    mod_args.model_name = mod
-                    mod_args.source = src
-                    model_cfgs.append(create_config_dicts(mod_args)[0])
-
-                # args.n_shot = shots
-                _, data_cfg = create_config_dicts(args, embeddings.keys())
-                runp = partial(
-                    run,
-                    n_shot=args.n_shot,
-                    n_test=args.n_test,
-                    n_reps=args.n_reps,
-                    class_id_sets=class_id_sets,
-                    device=args.device,
-                    data_cfg=data_cfg,
-                    features_things=features_things,
-                    transforms=transforms,
-                    transform_type=args.transform_type,
-                    regressor_type=args.regressor_type,
-                )
-                mapp = partial(_add_model, f=runp)
-
-                with get_context("spawn").Pool() as pool:
-                    all_results = list(
-                        tqdm(pool.map(mapp, model_cfgs), total=len(model_cfgs)),
-                        chunksize=10,
-                    )
-            else:
-                results = run(
-                    n_shot=args.n_shot,
-                    n_test=args.n_test,
-                    n_reps=args.n_reps,
-                    class_id_sets=class_id_sets,
-                    device=args.device,
-                    model_cfg=model_cfg,
-                    data_cfg=data_cfg,
-                    features_things=features_things,
-                    transforms=transforms,
-                    transform_type=args.transform_type,
-                    regressor_type=args.regressor_type,
-                )
+            results = run(
+                n_shot=args.n_shot,
+                n_test=args.n_test,
+                n_reps=args.n_reps,
+                class_id_sets=class_id_sets,
+                device=args.device,
+                model_cfg=model_cfg,
+                data_cfg=data_cfg,
+                features_things=features_things,
+                transforms=transforms,
+                transform_type=args.transform_type,
+                regressor_type=args.regressor_type,
+            )
             all_results.append(results)
     results = pd.concat(all_results)
 
