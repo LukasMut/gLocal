@@ -472,6 +472,7 @@ def run(
             dataset=val_triplets,
             batch_size=optim_cfg["triplet_batch_size"],
             train=False,
+            num_workers=0,
         )
         val_batches_imagenet = get_batches(
             dataset=imagenet_val_features,
