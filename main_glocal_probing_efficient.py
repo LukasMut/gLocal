@@ -514,7 +514,7 @@ def run(
         predictions = trainer.predict(glocal_probe, dataloaders=val_batches_things)
         predictions = torch.cat(predictions, dim=0).tolist()
         ooo_choices.append(predictions)
-        for metric, performance in test_performances.items():
+        for metric, performance in test_performances[0].items():
             cv_results[metric].append(performance)
         break
     transformation = {}
