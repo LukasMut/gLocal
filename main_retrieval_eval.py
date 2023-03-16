@@ -1,5 +1,6 @@
 import argparse
 import os
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -20,8 +21,16 @@ def evaluate_normal_vs_transformed(
 ):
     all_results = []
 
-    for model_name in tqdm(CLIP_MODELS):
-        embeddings = np.load(os.path.join(embeddings_dir, f"{model_name}.npz"))
+    for model_name in tqdm(CLIP_MODELS, desc="CLIP model"):
+        try:
+            embeddings = np.load(os.path.join(embeddings_dir, f"{model_name}.npz"))
+        except FileNotFoundError:
+            warnings.warn(
+                message=f"\nCould not find embedding file for {model_name}. Skipping current evaluation and continuing with next CLIP model...\n",
+                category=UserWarning,
+                stacklevel=1,
+            )
+            continue
         img_embedding = embeddings["images"]
         text_embedding = embeddings["text"]
         if update_transforms:
