@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from downstream.retrieval import CLIP_MODEL_MAPPING, CLIP_MODELS
 from downstream.retrieval.eval import evaluate
-from downstream.retrieval.transform import ThingsFeatureTransform
+from downstream.retrieval.transform import THINGSFeatureTransform
 
 
 def evaluate_normal_vs_transformed(
@@ -19,49 +19,56 @@ def evaluate_normal_vs_transformed(
     concat_weight=None,
 ):
     all_results = []
-    if update_transforms:
-        things_feature_transform = ThingsFeatureTransform(transform_path=transform_path)
+
     for model_name in tqdm(CLIP_MODELS):
         embeddings = np.load(os.path.join(embeddings_dir, f"{model_name}.npz"))
-        text = torch.tensor(embeddings["text"])
-        image = torch.tensor(embeddings["images"])
+        img_embedding = embeddings["images"]
+        text_embedding = embeddings["text"]
         if update_transforms:
             transform_model_key = CLIP_MODEL_MAPPING[model_name]
+            things_feature_transform = THINGSFeatureTransform(
+                source="custom",
+                model_name=transform_model_key,
+                module="penultimate",
+                path_to_transform=transform_path,
+            )
             image_transformed = torch.tensor(
-                things_feature_transform.transform_features(
-                    embeddings["images"], model_name=transform_model_key
-                )
+                things_feature_transform.transform_features(img_embedding)
             )
             text_transformed = torch.tensor(
-                things_feature_transform.transform_features(
-                    embeddings["text"], model_name=transform_model_key
-                )
+                things_feature_transform.transform_features(text_embedding)
             )
             np.savez(
                 os.path.join(embeddings_dir, f"{model_name}.npz"),
-                images=embeddings["images"],
-                text=embeddings["text"],
+                images=img_embedding,
+                text=text_embedding,
                 image_transformed=image_transformed,
                 text_transformed=text_transformed,
             )
         else:
-            image_transformed = torch.tensor(embeddings["image_transformed"])
-            text_transformed = torch.tensor(embeddings["text_transformed"])
+            image_transformed = torch.from_numpy(embeddings["image_transformed"])
+            text_transformed = torch.from_numpy(embeddings["text_transformed"])
 
         # Evaluate without transforms
-        results = evaluate(image, text, dataset_root=data_root)
+        img_embedding = torch.from_numpy(img_embedding)
+        text_embedding = torch.from_numpy(text_embedding)
+        results = evaluate(img_embedding, text_embedding, dataset_root=data_root)
         results["model"] = model_name
         results["transform"] = False
         all_results.append(results)
 
         if concat_weight is not None:
-            print("Using weighted concat with", concat_weight)
-            print(image_transformed.shape)
+            print("\nUsing weighted concat with", concat_weight)
+            print(f"Shape: {image_transformed.shape}\n")
             image_transformed = torch.cat(
-                image * (1 - concat_weight), image_transformed * concat_weight, dim=1
+                img_embedding * (1 - concat_weight),
+                image_transformed * concat_weight,
+                dim=1,
             )
             text_transformed = torch.cat(
-                text * (1 - concat_weight), text_transformed * concat_weight, dim=1
+                text_embedding * (1 - concat_weight),
+                text_transformed * concat_weight,
+                dim=1,
             )
 
         # Evaluate with transforms
