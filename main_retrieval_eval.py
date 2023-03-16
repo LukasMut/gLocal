@@ -13,10 +13,10 @@ from downstream.retrieval.transform import THINGSFeatureTransform
 
 
 def evaluate_normal_vs_transformed(
-    embeddings_dir,
-    data_root,
-    transform_path,
-    update_transforms=False,
+    embeddings_dir: str,
+    data_root: str,
+    transform_path: str,
+    update_transforms: bool = False,
     concat_weight=None,
 ):
     all_results = []
@@ -98,8 +98,7 @@ if __name__ == "__main__":
         "--concat-weight",
         type=float,
         default=None,
-        help="Off by default. Set to a weighing factor to concat embeddings and weigh by the "
-        "factor",
+        help="Off by default. Set to a weighing factor to concat embeddings and weigh by the <factor>",
     )
     parser.add_argument("--data_root", default="resources/flickr30k_images")
     parser.add_argument(
