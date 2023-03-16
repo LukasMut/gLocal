@@ -34,10 +34,10 @@ def evaluate_normal_vs_transformed(
         img_embedding = embeddings["images"]
         text_embedding = embeddings["text"]
         if update_transforms:
-            transform_model_key = CLIP_MODEL_MAPPING[model_name]
+            model_key = CLIP_MODEL_MAPPING[model_name]
             things_feature_transform = THINGSFeatureTransform(
                 source="custom",
-                model_name=transform_model_key,
+                model_name=model_key,
                 module="penultimate",
                 path_to_transform=transform_path,
             )
