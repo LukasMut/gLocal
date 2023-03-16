@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.neighbors import KNeighborsRegressor
 
-from main_fewshot import Array
+Array = np.ndarray
 
 
 def train_regression(train_targets: Array, train_features: Array, k: int = None):

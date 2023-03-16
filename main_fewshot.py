@@ -11,10 +11,6 @@ import pandas as pd
 import torch
 from ml_collections import config_dict
 from thingsvision import get_extractor
-from torchvision.datasets import CIFAR100, DTD, SUN397
-from torchvision.transforms import Compose, CenterCrop, Resize
-import torch.nn.functional as F
-from functools import partial
 
 import utils
 from downstream.fewshot.data import load_dataset
@@ -163,7 +159,7 @@ def get_features_targets(
             embeddings=embeddings,
         )
     else:
-        complete_model_name = model_name + "_" + model_params["variant"]
+        complete_model_name = model_name + ("" if model_params is None else ("_" + model_params["variant"]))
         try:
             # Try to load the embeddings from disk
             embeddings_path = os.path.join(data_cfg.embeddings_root, source, complete_model_name, module_type)
