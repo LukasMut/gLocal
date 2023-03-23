@@ -15,7 +15,7 @@ def get_model(name, module):
     return model
 
 
-def main(dataset, data_root, model_name, module, path_to_transform, do_transform=False, device='cuda'):
+def main(dataset, data_root, model_name, module, path_to_transform, num_classes, do_transform=False, device='cuda'):
     model = get_model(name=model_name, module=module)
 
     things_transform = None
@@ -26,7 +26,7 @@ def main(dataset, data_root, model_name, module, path_to_transform, do_transform
     options = {}
     if dataset == 'cifar100-shift':
         options = dict(train_indices=[0, 1, 2])
-    for cls in range(0, 20):
+    for cls in range(0, num_classes):
         evaluator = ADEvaluator(dataset=dataset, model=model,
                                 normal_cls=cls, device=device,
                                 things_transform=things_transform,
@@ -49,6 +49,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", default='cifar10')
     parser.add_argument("--model", default='resnet18')
     parser.add_argument("--module", default='penultimate')
+    parser.add_argument("--classes", type=int, default=10)
     parser.add_argument(
         "--transform_path",
         default="/home/space/datasets/things/transforms/transforms_without_norm.pkl",
@@ -58,6 +59,6 @@ if __name__ == "__main__":
 
     ad_results = main(dataset=args.dataset, data_root=args.data_root,
                       model_name=args.model, module=args.module,
-                      path_to_transform=args.transform_path)
+                      path_to_transform=args.transform_path, num_classes=args.classes)
     with open(args.out, 'w+') as f:
         json.dump(ad_results, f)
