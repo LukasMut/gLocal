@@ -9,15 +9,15 @@ from tqdm import tqdm
 
 from downstream.retrieval import CLIP_MODEL_MAPPING, CLIP_MODELS
 from downstream.retrieval.eval import evaluate
-from downstream.retrieval.transform import THINGSFeatureTransform
+from downstream.utils import THINGSFeatureTransform
 
 
 def evaluate_normal_vs_transformed(
-    embeddings_dir: str,
-    data_root: str,
-    transform_path: str,
-    update_transforms: bool = False,
-    concat_weight=None,
+        embeddings_dir: str,
+        data_root: str,
+        transform_path: str,
+        update_transforms: bool = False,
+        concat_weight=None,
 ):
     all_results = []
 
