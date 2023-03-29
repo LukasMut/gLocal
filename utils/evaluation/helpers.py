@@ -62,7 +62,7 @@ def load_embeddings(
             if sort:
                 filenames = embedding_file["filenames"]
                 filenames = convert_filenames(filenames)
-                if sort == "things":
+                if (sort == "things" or sort == "peterson"):
                     try:
                         assert isinstance(
                             object_names, Union[List[str], Array]

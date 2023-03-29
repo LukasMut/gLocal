@@ -137,6 +137,13 @@ def evaluate(args) -> None:
     elif args.dataset == "things":
         sort = args.dataset
         object_names = utils.evaluation.get_things_objects(args.data_root)
+    elif args.dataset == "peterson":
+        sort = args.dataset
+        if args.data_root.endswith("/"):
+            root = "/".join(args.data_root.split("/")[:-2] + [args.dataset])
+        else:
+            root = "/".join(args.data_root.split("/")[:-1] + [args.dataset])
+        object_names = sorted(os.listdir(os.path.join(root, args.category, "images")))
     else:
         sort = "alphanumeric"
         object_names = None
@@ -189,9 +196,6 @@ def evaluate(args) -> None:
                 features - things_features_current_model.mean()
             ) / things_features_current_model.std()
             features = features @ transform
-            if args.transform_type == "with_norm":
-                features = torch.from_numpy(features)
-                features = F.normalize(features, dim=1).cpu().numpy()
 
         rsa_stats = utils.evaluation.perform_rsa(
             dataset=dataset,
