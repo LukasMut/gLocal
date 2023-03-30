@@ -1,82 +1,91 @@
 import numpy as np
 from .cifar import ADCIFAR10, ADCIFAR100, ADCIFAR100Shift
 import torch
-import torch.nn.functional as F
 from sklearn.metrics import roc_auc_score
-from torchvision import transforms
 from .imagenet30 import ADImageNet
-from tqdm.auto import tqdm
 from .dtd import ADDTD
 from .fine_grained import ADFlowers
+from thingsvision import get_extractor
+import torch.nn.functional as F
 
 Array = np.array
 
 
+class ImageIterator:
+
+    def __init__(self, data_loader):
+        self.data_loader = data_loader
+
+    def __iter__(self):
+        for x, _ in self.data_loader:
+            yield x
+
+    def __len__(self):
+        return len(self.data_loader)
+
+
 class ADEvaluator:
 
-    def __init__(self, dataset, model, data_dir, normal_cls=0, device='cuda', things_transform=None, **kwargs):
-        imagenet_transform = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(*[[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]])
-        ])
-        cifar_transform = transforms.Compose([
-            transforms.Resize(224),
-            transforms.ToTensor(),
-            transforms.Normalize(*[[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]])
-        ])
+    def __init__(self, dataset, model_name, source, module, model_params, data_dir, normal_cls=0, device='cuda',
+                 things_transform=None, **kwargs):
+
+        self.extractor = get_extractor(
+            model_name=model_name,
+            source=source,
+            device=device,
+            pretrained=True,
+            model_parameters=model_params
+        )
+        transform = self.extractor.get_transformations()
+        self.device = device
+        self.things_transform = things_transform
+        self.module = module
 
         if dataset == 'cifar10':
-            anomaly_ds = ADCIFAR10(normal_classes=[normal_cls], transform=cifar_transform, data_dir=data_dir)
+            anomaly_ds = ADCIFAR10(transform=transform, data_dir=data_dir)
         elif dataset == 'cifar100':
-            anomaly_ds = ADCIFAR100(normal_classes=[normal_cls], transform=cifar_transform, data_dir=data_dir)
+            anomaly_ds = ADCIFAR100(normal_classes=[normal_cls], transform=transform, data_dir=data_dir)
         elif dataset == 'imagenet':
-            anomaly_ds = ADImageNet(normal_classes=[normal_cls], transform=imagenet_transform, data_dir=data_dir)
+            anomaly_ds = ADImageNet(normal_classes=[normal_cls], transform=transform, data_dir=data_dir)
         elif dataset == 'dtd':
-            anomaly_ds = ADDTD(normal_classes=[normal_cls], transform=imagenet_transform, data_dir=data_dir)
+            anomaly_ds = ADDTD(normal_classes=[normal_cls], transform=transform, data_dir=data_dir)
         elif dataset == 'flowers':
-            anomaly_ds = ADFlowers(normal_classes=[normal_cls], transform=imagenet_transform, data_dir=data_dir)
+            anomaly_ds = ADFlowers(normal_classes=[normal_cls], transform=transform, data_dir=data_dir)
         elif dataset == 'cifar100-shift':
-            anomaly_ds = ADCIFAR100Shift(normal_class=normal_cls, transform=cifar_transform,
+            anomaly_ds = ADCIFAR100Shift(normal_class=normal_cls, transform=transform,
                                          data_dir=data_dir, **kwargs)
         else:
             raise ValueError()
-        self.model = model
-        self.model.eval()
+
         self.dataset = anomaly_ds
         self.dataset.setup()
-        self.device = device
-        self.model = model.to(device)
-        self.things_transform = things_transform
 
-    def evaluate(self, knn_k=5, do_transform=False):
-        train_features = ()
-        with torch.no_grad():
-            for x, _ in tqdm(self.dataset.train_dataloader()):
-                x = x.to(self.device)
-                feats = self.model(x)
-                if do_transform:
-                    feats = self.things_transform.transform_features(feats)
-                feats = F.normalize(feats, dim=1)
-                train_features += (feats,)
-        train_features = torch.cat(train_features).t().contiguous()
+    def evaluate(self, normal_classes, knn_k=5, do_transform=False):
 
-        test_anomaly_scores = []
-        test_labels = []
-        with torch.no_grad():
-            for x, y in tqdm(self.dataset.test_dataloader()):
-                x = x.to(self.device)
-                feats = self.model(x)
-                if do_transform:
-                    feats = self.things_transform.transform_features(feats)
-                feats = F.normalize(feats, dim=1)
-                sim_matrix = torch.mm(feats, train_features)
-                sim_weight, sim_indices = sim_matrix.topk(k=knn_k, dim=-1)
-                anomaly_score = - sim_weight.mean(dim=-1).cpu().numpy()
-                test_anomaly_scores.append(anomaly_score)
-                test_labels.append(y)
+        train_features = self.extractor.extract_features(
+            batches=ImageIterator(self.dataset.train_dataloader()),
+            module_name=self.module,
+            flatten_acts=True
+        )
+        train_features = F.normalize(torch.tensor(train_features).to(torch.float32), dim=-1)
 
-        test_anomaly_scores = np.concatenate(test_anomaly_scores)
-        test_labels = np.concatenate(test_labels)
-        return roc_auc_score(test_labels, test_anomaly_scores)
+        test_features = self.extractor.extract_features(
+            batches=ImageIterator(self.dataset.test_dataloader()),
+            module_name=self.module,
+            flatten_acts=True
+        )
+        test_features = F.normalize(torch.tensor(test_features).to(torch.float32), dim=-1)
+
+        aucs = []
+        for normal_cls in normal_classes:
+            train_reduced = self.dataset.reduce_train(train_embeddings=train_features, normal_cls=normal_cls)
+            test_reduced, test_reduced_labels = self.dataset.reduce_test(test_embeddings=test_features,
+                                                                         normal_cls=normal_cls)
+
+            print(train_reduced.shape)
+            print(test_reduced.shape)
+            sim_matrix = torch.mm(test_reduced, train_reduced.t())
+            sim_weight, sim_indices = sim_matrix.topk(k=knn_k, dim=-1)
+            anomaly_scores = - sim_weight.mean(dim=-1).cpu().numpy()
+            aucs.append(roc_auc_score(test_reduced_labels, anomaly_scores))
+        return aucs

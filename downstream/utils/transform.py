@@ -2,6 +2,7 @@ from multiprocessing.sharedctypes import Value
 import os
 import pickle
 import numpy as np
+import zipfile
 
 Array = np.ndarray
 FILE_FORMATS = [".pkl", ".npz"]
@@ -9,16 +10,22 @@ FILE_FORMATS = [".pkl", ".npz"]
 
 class THINGSFeatureTransform(object):
     def __init__(
-        self,
-        source: str = "custom",
-        model_name: str = "clip_ViT-B/16",
-        module: str = "penultimate",
-        path_to_transform: str = "/home/space/datasets/things/transforms/transforms_without_norm.pkl",
+            self,
+            source: str = "custom",
+            model_name: str = "clip_ViT-B/16",
+            module: str = "penultimate",
+            path_to_transform: str = "/home/space/datasets/things/transforms/transforms_without_norm.pkl",
+            archive_path=None
     ):
         self.source = source
         self.model_name = model_name
         self.module = module
-        self._load_transform(path_to_transform)
+        if archive_path:
+            archive = zipfile.ZipFile(archive_path, 'r')
+            f = archive.open(path_to_transform)
+            self.transform = np.load(f, mmap_mode='r')
+        else:
+            self._load_transform(path_to_transform)
 
     def _load_transform(self, path_to_transform: str) -> None:
         assert os.path.isfile(

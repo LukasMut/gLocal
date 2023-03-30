@@ -2,7 +2,7 @@ from torch.utils.data import DataLoader
 
 
 class BaseADSet:
-    def __init__(self, transform, batch_size=16, num_workers=0):
+    def __init__(self, transform, batch_size=64, num_workers=0):
         self.normal_label = 0
         self.anomalous_label = 1
 
@@ -17,7 +17,14 @@ class BaseADSet:
         raise NotImplementedError('Subclass has to implement this method')
 
     def train_dataloader(self):
-        return DataLoader(self._train, batch_size=self._batch_size, num_workers=self._num_workers, drop_last=False)
+        return DataLoader(self._train, batch_size=self._batch_size,
+                          num_workers=self._num_workers, drop_last=False)
 
     def test_dataloader(self):
         return DataLoader(self._test, batch_size=self._batch_size, num_workers=self._num_workers)
+
+    def reduce_train(self, train_embeddings, normal_cls):
+        pass
+
+    def reduce_test(self, test_embeddings, normal_cls):
+        pass
