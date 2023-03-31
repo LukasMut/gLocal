@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.neighbors import KNeighborsRegressor
@@ -73,3 +75,15 @@ def regress(
         raise ValueError(f"Unknown regressor: {regressor}")
     acc, preds = test_regression(reg, test_targets, test_features)
     return acc, preds
+
+
+def get_regressor(train_features: Array, train_targets: Array, regressor_type: str, k: Optional[int] = None):
+    if regressor_type == "ridge":
+        regressor = train_regression(
+                train_targets, train_features, k=k
+        )
+    elif regressor_type == "knn":
+        regressor = train_knn(train_targets, train_features)
+    else:
+        raise ValueError(f"Unknown regressor: {regressor_type}")
+    return regressor
