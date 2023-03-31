@@ -23,7 +23,7 @@ class Peterson(torch.utils.data.Dataset):
         self.root = root
         self.category = category
         self.img_subfolder = "images"
-        self.sim_subfolder = "sim_judgements"
+        self.sim_subfolder = "sim_judgments"
         self.transform = transform
         self.order = sorted(
             [
