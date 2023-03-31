@@ -44,7 +44,7 @@ class ADEvaluator:
         self.module = module
 
         variant = ''
-        if "variant" in model_params:
+        if model_params is not None and "variant" in model_params:
             variant = model_params['variant']
         cache_path = f'{dataset}_{model_name}_{variant}_{module}.npz'
         cache_path = cache_path.replace('/', '-')
@@ -53,16 +53,15 @@ class ADEvaluator:
         if dataset == 'cifar10':
             anomaly_ds = ADCIFAR10(transform=transform, data_dir=data_dir)
         elif dataset == 'cifar100':
-            anomaly_ds = ADCIFAR100(normal_classes=[normal_cls], transform=transform, data_dir=data_dir)
+            anomaly_ds = ADCIFAR100(transform=transform, data_dir=data_dir)
         elif dataset == 'imagenet':
-            anomaly_ds = ADImageNet(normal_classes=[normal_cls], transform=transform, data_dir=data_dir)
+            anomaly_ds = ADImageNet(transform=transform, data_dir=data_dir)
         elif dataset == 'dtd':
-            anomaly_ds = ADDTD(normal_classes=[normal_cls], transform=transform, data_dir=data_dir)
+            anomaly_ds = ADDTD(transform=transform, data_dir=data_dir)
         elif dataset == 'flowers':
-            anomaly_ds = ADFlowers(normal_classes=[normal_cls], transform=transform, data_dir=data_dir)
+            anomaly_ds = ADFlowers(transform=transform, data_dir=data_dir)
         elif dataset == 'cifar100-shift':
-            anomaly_ds = ADCIFAR100Shift(normal_class=normal_cls, transform=transform,
-                                         data_dir=data_dir, **kwargs)
+            anomaly_ds = ADCIFAR100Shift(transform=transform, data_dir=data_dir, **kwargs)
         else:
             raise ValueError()
 
@@ -70,7 +69,6 @@ class ADEvaluator:
         self.dataset.setup()
 
     def evaluate(self, normal_classes, knn_k=5, do_transform=False):
-
         if os.path.exists(self.cache_path):
             saved_features = np.load(self.cache_path)
             train_features = saved_features['train']

@@ -34,10 +34,9 @@ class ADCIFAR10(BaseADSet):
 
 
 class ADCIFAR100(BaseADSet):
-    def __init__(self, normal_classes: List[int], data_dir: str = './resources/data', *args, **kwargs):
+    def __init__(self, data_dir: str = './resources/data', *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.data_dir = data_dir
-        self.normal_classes = normal_classes
 
     def create_datasets(self, train_transform, test_transform):
         train = CIFAR100(root=self.data_dir,
@@ -63,10 +62,9 @@ class ADCIFAR100(BaseADSet):
 
 class ADCIFAR100Shift(BaseADSet):
 
-    def __init__(self, normal_class: int, train_indices, data_dir: str = './resources/data', *args, **kwargs):
+    def __init__(self, train_indices, data_dir: str = './resources/data', *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.data_dir = data_dir
-        self.normal_class = normal_class
         self.train_indices = train_indices
 
     def create_datasets(self, train_transform, test_transform):
@@ -83,19 +81,16 @@ class ADCIFAR100Shift(BaseADSet):
         return train, test
 
     def reduce_train(self, train_embeddings, normal_cls):
-        fine_classes = np.argwhere(self._train.coarse_labels == self.normal_class)
-        all_indices = []
-        for idx in list(range(100)):
-            if idx not in fine_classes[self.train_indices]:
-                all_indices.append(idx)
-        train_idx_normal = get_target_label_idx(self._train.fine_targets, np.array(all_indices))
+        fine_classes = np.argwhere(self._train.coarse_labels == normal_cls)
+        train_idx_normal = get_target_label_idx(self._train.fine_targets,
+                                                np.array(fine_classes[self.train_indices]))
         return train_embeddings[train_idx_normal]
 
     def reduce_test(self, test_embeddings, normal_cls):
-        fine_classes = np.argwhere(self._test.coarse_labels == self.normal_class)
+        fine_classes = np.argwhere(self._test.coarse_labels == normal_cls)
         all_indices = []
         for idx in list(range(100)):
             if idx not in fine_classes[self.train_indices]:
                 all_indices.append(idx)
-        idx_normal = get_target_label_idx(self._test.fine_targets, np.array(all_indices))
-        return test_embeddings[idx_normal], self._test.coarse_labels != normal_cls
+        indices = get_target_label_idx(self._test.fine_targets, np.array(all_indices))
+        return test_embeddings[indices], self._test.targets[indices] != normal_cls
