@@ -1,6 +1,7 @@
 import argparse
 import os
 import random
+import re
 import warnings
 from collections import defaultdict
 from typing import Any, Tuple
@@ -143,7 +144,13 @@ def evaluate(args) -> None:
             root = "/".join(args.data_root.split("/")[:-2] + [args.dataset])
         else:
             root = "/".join(args.data_root.split("/")[:-1] + [args.dataset])
-        object_names = sorted(os.listdir(os.path.join(root, args.category, "images")))
+        object_names = sorted(
+            [
+                re.sub(r"(.png|.jpg)", "", f.name)
+                for f in os.scandir(os.path.join(root, args.category, "images"))
+                if re.search(r"(.png|.jpg)$", f.name)
+            ]
+        )
     else:
         sort = "alphanumeric"
         object_names = None
@@ -160,6 +167,7 @@ def evaluate(args) -> None:
         name=args.dataset,
         data_dir=data_cfg.root,
         stimulus_set=data_cfg.stimulus_set,
+        category=data_cfg.category,
     )
     if args.use_transforms:
         things_features = utils.evaluation.load_features(
@@ -228,7 +236,7 @@ def evaluate(args) -> None:
 
     # convert results into Pandas DataFrame
     results = pd.DataFrame(results)
-    out_path = os.path.join(args.out_path, args.dataset, model_cfg.source, args.module)
+    out_path = os.path.join(args.out_path, args.category, model_cfg.source, args.module)
     if not os.path.exists(out_path):
         print("\nCreating output directory...\n")
         os.makedirs(out_path)
