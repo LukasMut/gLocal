@@ -4,7 +4,7 @@ import os
 import pickle
 import warnings
 from datetime import datetime
-from typing import Any, List, Tuple, Optional
+from typing import Any, List, Tuple, Optional, Dict
 
 import numpy as np
 import pandas as pd
@@ -146,6 +146,7 @@ def get_features_targets(
     shuffle=False,
     device: str = "cpu",
     embeddings: Optional[Array] = None,
+    superclass_mapping: Optional[Dict] = None,
 ):
     ids_subset = class_ids if ids_subset is None else ids_subset
     dataset_is_embedded = is_embedding_source(source)
@@ -163,17 +164,23 @@ def get_features_targets(
         try:
             # Try to load the embeddings from disk
             embeddings_path = os.path.join(data_cfg.embeddings_root, source, complete_model_name, module_type)
-            with open(os.path.join(embeddings_path, "embeddings.pkl"), "rb") as f:
-                embeddigns = pickle.load(f)
+            if data_cfg.name != "imagenet":
+                # For all other datasets, we can load the embeddings from a single file
+                with open(os.path.join(embeddings_path, "embeddings.pkl"), "rb") as f:
+                    embeddings = pickle.load(f)
+            else:
+                # For imagenet, we need to load the embeddings from individual files
+                embeddings = None
             dataset = load_dataset(
                     name=data_cfg.name,
                     data_dir=data_cfg.root,
                     train=train,
-                    embeddings=embeddigns,
+                    embeddings=embeddings,
+                    embeddings_root=embeddings_path
             )
             dataset_is_embedded = True
         except (FileNotFoundError, TypeError):
-            # If the embeddings are not found or embeddings_rood is None, extract embeddings
+            # If the embeddings are not found or embeddings_root is None, extract embeddings
             extractor = get_extractor(
                 model_name=model_name,
                 source=source,
@@ -218,10 +225,16 @@ def get_features_targets(
             for x, y in batches:
                 if X is None:
                     X = [x.to(device)]
-                    Y = [i_cls_id] * len(y)
+                    if superclass_mapping is not None:
+                        Y = [superclass_mapping[cls_id]] * len(y)
+                    else:
+                        Y = [i_cls_id] * len(y)
                 else:
                     X += [x.to(device)]
-                    Y += [i_cls_id] * len(y)
+                    if superclass_mapping is not None:
+                        Y += [superclass_mapping[cls_id]] * len(y)
+                    else:
+                        Y += [i_cls_id] * len(y)
                 break
         Y = np.array(Y)
 
@@ -308,11 +321,17 @@ def run(
     transforms: Array,
     transform_type: str = None,
     regressor_type: str = "ridge",
+    class_id_sets_test: Optional[List] = None,
+    superclass_mapping: Optional[Dict] = None,
 ):
     transform_options = [False, True]
 
+    if class_id_sets_test is None:
+        class_id_sets_test = class_id_sets
+        print("Using training classes for testing")
+
     results = []
-    for class_id_set in class_id_sets:
+    for class_id_set, class_id_set_test in zip(class_id_sets, class_id_sets_test):
         for model_name, module, source in zip(
             model_cfg.names, model_cfg.modules, model_cfg.sources
         ):
@@ -335,6 +354,7 @@ def run(
                 n_batches=n_reps,
                 shuffle=True,
                 device=device,
+                superclass_mapping=superclass_mapping
             )
 
             things_mean = np.mean(
@@ -379,9 +399,9 @@ def run(
             # Extract and evaluate features w and w/o transform. Due to memory constraints, for each class individually.
             for i_rep in range(n_reps):
                 accuracies = {a: [] for a in transform_options}
-                for cls_id in [class_id_set]:
+                for cls_id in [class_id_set_test]:
                     test_features_original, test_targets = get_features_targets(
-                        class_id_set,
+                        class_id_set_test,
                         name,
                         model_params,
                         source,
@@ -393,6 +413,7 @@ def run(
                         shuffle=False,
                         ids_subset=cls_id if type(cls_id) == list else [cls_id],
                         device=device,
+                        superclass_mapping=superclass_mapping
                     )
                     test_features_original = test_features_original[0]
                     test_targets = test_targets[0]
@@ -436,7 +457,7 @@ def run(
                         "family": family_name,
                         "dataset": data_cfg.name,
                         "transform": use_transforms,
-                        "classes": class_id_set,
+                        "classes": list(set(class_id_set).union(set(class_id_set_test))),
                         "n_train": n_shot,
                         "repetition": i_rep,
                         "transform_type": transform_type if use_transforms else None,

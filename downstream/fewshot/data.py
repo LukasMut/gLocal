@@ -1,11 +1,39 @@
 import os
 import torch
 import numpy as np
-from typing import Optional
-from torchvision.datasets import CIFAR100, DTD, SUN397
+from typing import Optional, Any, Tuple
+from torchvision.datasets import CIFAR100, DTD, SUN397, ImageNet
 
 Array = np.ndarray
 Tensor = torch.Tensor
+
+
+class EmbeddedImageNet(ImageNet):
+    def __init__(
+        self,
+        root: str,
+        embedding_root: str,
+        split: str = "train",
+        device: str = "cpu",
+        **kwargs: Any
+    ) -> None:
+        super(EmbeddedImageNet, self).__init__(root=root, split=split, **kwargs)
+        self.device = torch.device(device)
+        self.feature_order = sorted(
+            [
+                os.path.join(embedding_root, self.split, f.name)
+                for f in os.scandir(os.path.join(embedding_root, self.split))
+                if f.name.endswith("pt")
+            ]
+        )
+
+    def __getitem__(self, index: int) -> Tuple[Any, Any]:
+        _, target = self.samples[index]
+        sample = torch.load(self.feature_order[index], map_location=torch.device(self.device))
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return sample, target
 
 
 def load_dataset(
@@ -14,6 +42,7 @@ def load_dataset(
     train: bool,
     transform=None,
     embeddings: Optional[Array] = None,
+    embeddings_root: Optional[str] = None,
 ):
     if name == "cifar100":
         dataset_class = CIFAR100
@@ -51,10 +80,26 @@ def load_dataset(
         with open(os.path.join(dataset.root, split_file)) as f:
             lines = f.read()
         file_names = [l for l in lines.split("\n") if not l == ""]
-        dataset._image_files = [os.path.join(dataset._data_dir, fn[1:]) for fn in file_names]
+        dataset._image_files = [
+            os.path.join(dataset._data_dir, fn[1:]) for fn in file_names
+        ]
         dataset._labels = [
             dataset.class_to_idx["/".join(path.split("/")[2:-1])] for path in file_names
         ]
+    elif name == "imagenet":
+        if embeddings_root is not None:
+            dataset = EmbeddedImageNet(
+                    root=data_dir,
+                    embedding_root=embeddings_root,
+                    split="train" if train else "val",
+                    transform=transform,
+            )
+        else:
+            dataset = ImageNet(
+                root=data_dir,
+                split="train" if train else "val",
+                transform=transform,
+            )
     else:
         raise ValueError("\nUnknown dataset\n")
 
