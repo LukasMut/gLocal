@@ -4,6 +4,7 @@ import pickle
 import numpy as np
 import zipfile
 import utils
+import torch
 
 Array = np.ndarray
 FILE_FORMATS = [".pkl", ".npz"]
@@ -17,7 +18,8 @@ class THINGSFeatureTransform(object):
             module: str = "penultimate",
             path_to_transform: str = "/home/space/datasets/things/transforms/transforms_without_norm.pkl",
             things_embeddings_path: str = "/home/space/datasets/things/embeddings/model_features_per_source.pkl",
-            archive_path=None
+            archive_path=None,
+            device='cpu'
     ):
         self.source = source
         self.model_name = model_name
@@ -42,6 +44,12 @@ class THINGSFeatureTransform(object):
                 features_things[source][model_name][self.module],
                 # axis=0,
             )
+        self.things_mean = torch.tensor(self.things_mean).to(device)
+        self.things_std = torch.tensor(self.things_std).to(device)
+        self.variables = {}
+        for key in ["weights", "bias"]:
+            if key in self.transform:
+                self.variables[key] = torch.tensor(self.transform[key]).to(device)
 
     def _load_transform(self, path_to_transform: str) -> None:
         assert os.path.isfile(
@@ -61,7 +69,7 @@ class THINGSFeatureTransform(object):
     def transform_features(self, features: Array) -> Array:
         features = (features - self.things_mean) / self.things_std
         if "weights" in self.transform:
-            features = features @ self.transform["weights"]
-            if "bias" in self.transform:
-                features += self.transform["bias"]
+            features = features @ self.variables["weights"]
+            if "bias" in self.variables:
+                features += self.variables["bias"]
         return features

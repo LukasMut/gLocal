@@ -1,5 +1,5 @@
 import numpy as np
-from .cifar import ADCIFAR10, ADCIFAR100, ADCIFAR100Shift
+from .cifar import ADCIFAR10, ADCIFAR100, ADCIFAR100Shift, ADCIFAR100Coarse
 import torch
 from sklearn.metrics import roc_auc_score
 from .imagenet30 import ADImageNet
@@ -27,9 +27,8 @@ class ImageIterator:
 
 class ADEvaluator:
 
-    def __init__(self, dataset, model_name, source, module, model_params, data_dir, normal_cls=0,
-                 device='cuda', cache_dir='cache',
-                 things_transform=None, **kwargs):
+    def __init__(self, dataset, model_name, source, module, model_params, data_dir,
+                 device='cuda', cache_dir='cache', **kwargs):
 
         self.extractor = get_extractor(
             model_name=model_name,
@@ -40,7 +39,6 @@ class ADEvaluator:
         )
         transform = self.extractor.get_transformations()
         self.device = device
-        self.things_transform = things_transform
         self.module = module
 
         variant = ''
@@ -62,37 +60,46 @@ class ADEvaluator:
             anomaly_ds = ADFlowers(transform=transform, data_dir=data_dir)
         elif dataset == 'cifar100-shift':
             anomaly_ds = ADCIFAR100Shift(transform=transform, data_dir=data_dir, **kwargs)
+        elif dataset == 'cifar100-coarse':
+            anomaly_ds = ADCIFAR100Coarse(transform=transform, data_dir=data_dir)
         else:
             raise ValueError()
 
         self.dataset = anomaly_ds
         self.dataset.setup()
 
-    def evaluate(self, normal_classes, knn_k=5, do_transform=False):
         if os.path.exists(self.cache_path):
             saved_features = np.load(self.cache_path)
-            train_features = saved_features['train']
-            test_features = saved_features['test']
+            self.train_features = saved_features['train']
+            self.test_features = saved_features['test']
         else:
-            train_features = self.extractor.extract_features(
+            self.train_features = self.extractor.extract_features(
                 batches=ImageIterator(self.dataset.train_dataloader()),
                 module_name=self.module,
                 flatten_acts=True
             )
-            test_features = self.extractor.extract_features(
+            self.test_features = self.extractor.extract_features(
                 batches=ImageIterator(self.dataset.test_dataloader()),
                 module_name=self.module,
                 flatten_acts=True
             )
-            np.savez(self.cache_path, train=train_features, test=test_features)
+            np.savez(self.cache_path, train=self.train_features, test=self.test_features)
 
-        if do_transform:
-            train_features = self.things_transform.transform_features(train_features)
-        train_features = F.normalize(torch.tensor(train_features).to(torch.float32), dim=-1)
+        self.train_features = torch.tensor(self.train_features).to(torch.float32).to(self.device)
+        self.test_features = torch.tensor(self.test_features).to(torch.float32).to(self.device)
 
-        if do_transform:
-            test_features = self.things_transform.transform_features(test_features)
-        test_features = F.normalize(torch.tensor(test_features).to(torch.float32), dim=-1)
+    def evaluate(self, normal_classes, knn_k=5, things_transform=None):
+
+        train_features = self.train_features
+        test_features = self.test_features
+
+        if things_transform is not None:
+            train_features = things_transform.transform_features(train_features)
+        train_features = F.normalize(train_features, dim=-1)
+
+        if things_transform is not None:
+            test_features = things_transform.transform_features(test_features)
+        test_features = F.normalize(test_features, dim=-1)
 
         aucs = []
         for normal_cls in normal_classes:

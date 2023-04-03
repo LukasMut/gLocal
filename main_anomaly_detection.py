@@ -22,10 +22,10 @@ def main(dataset, data_root, source, model_name, module, path_to_transforms,
                    data_dir=data_root
                    )
     if dataset == 'cifar100-shift':
-        options = dict(train_indices=[0, 1, 2])
+        options["train_indices"] = [0, 1, 2]
 
-    evaluator = ADEvaluator(things_transform=None, **options)
-    results = evaluator.evaluate(do_transform=False,
+    evaluator = ADEvaluator(**options)
+    results = evaluator.evaluate(things_transform=None,
                                  normal_classes=list(range(num_classes)))
     output["baseline"] = results
     for path_to_transform in tqdm(path_to_transforms):
@@ -33,9 +33,9 @@ def main(dataset, data_root, source, model_name, module, path_to_transforms,
         things_transform = THINGSFeatureTransform(source=source, model_name=model_name,
                                                   module=module_type,
                                                   archive_path=archive_path,
-                                                  path_to_transform=path_to_transform)
-        evaluator = ADEvaluator(things_transform=things_transform, **options)
-        results = evaluator.evaluate(do_transform=True,
+                                                  path_to_transform=path_to_transform,
+                                                  device=device)
+        results = evaluator.evaluate(things_transform=things_transform,
                                      normal_classes=list(range(num_classes)))
         output["results"].append({
             "path_to_transform": path_to_transform,
