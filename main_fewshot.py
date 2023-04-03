@@ -189,6 +189,12 @@ def parseargs():
         default="/home/space/datasets/things/probing/results",
         help="path/to/embeddings",
     )
+    aa(
+        "--embeddings_root",
+        type=str,
+        default=None,
+        help="path/to/embeddings of the dataset",
+    )
     aa("--out_dir", type=str, help="directory to save the results to")
     aa("--rnd_seed", type=int, default=42, help="random seed for reproducibility")
     args = parser.parse_args()
@@ -281,7 +287,10 @@ def get_features_targets(
     if sample_per_superclass:
         # sampe one barch or size #shots per superclass, rather than one batch per class
         n_superclasses = len(set(superclass_mapping.values()))
-        class_ids = [[ci for ci in class_ids if superclass_mapping[ci]==i] for i in range(n_superclasses)]
+        class_ids = [
+            [ci for ci in class_ids if superclass_mapping[ci] == i]
+            for i in range(n_superclasses)
+        ]
     features_all = []
     Y_all = []
     for i_batch in range(n_batches):
@@ -397,6 +406,7 @@ def run(
     class_id_set_test: Optional[List] = None,
     superclass_mapping: Optional[Dict] = None,
     sample_per_superclass: bool = False,
+    model_id_in_cfg: int = 0,
 ):
     transform_options = [False, True]
 
@@ -404,128 +414,129 @@ def run(
         class_id_set_test = class_id_set
         print("Using training classes for testing")
 
-    results = []
-    for model_name, module, source in zip(
-        model_cfg.names, model_cfg.modules, model_cfg.sources
+    model_name, module, source = (
+        model_cfg.names[model_id_in_cfg],
+        model_cfg.modules[model_id_in_cfg],
+        model_cfg.sources[model_id_in_cfg],
+    )
+    # Resolve family name
+    name, model_params = model_name_to_thingsvision(model_name)
+    family_name = utils.analyses.get_family_name(model_name)
+    module_type = model_cfg.module_type
+
+    # Extract train features
+    train_features_original_all, train_targets_all = get_features_targets(
+        class_id_set,
+        name,
+        model_params,
+        source,
+        module,
+        module_type,
+        data_cfg,
+        n_shot,
+        train=True,
+        n_batches=n_reps,
+        shuffle=True,
+        device=device,
+        superclass_mapping=superclass_mapping,
+        sample_per_superclass=sample_per_superclass,
+    )
+
+    try:
+        things_mean = transforms[source][model_name].things_mean
+    except:
+        things_mean = transforms[source][model_name].transform["mean"]
+
+    # Train regression w and w/o transform
+    regressors = {to: [] for to in transform_options}
+    for (train_features_original, train_targets) in zip(
+        train_features_original_all, train_targets_all
     ):
-        # Resolve family name
-        name, model_params = model_name_to_thingsvision(model_name)
-        family_name = utils.analyses.get_family_name(model_name)
-        module_type = model_cfg.module_type
-
-        # Extract train features
-        train_features_original_all, train_targets_all = get_features_targets(
-            class_id_set,
-            name,
-            model_params,
-            source,
-            module,
-            module_type,
-            data_cfg,
-            n_shot,
-            train=True,
-            n_batches=n_reps,
-            shuffle=True,
-            device=device,
-            superclass_mapping=superclass_mapping,
-            sample_per_superclass=sample_per_superclass,
-        )
-
-        try:
-            things_mean = transforms[source][model_name].things_mean
-        except:
-            things_mean = transforms[source][model_name].transform["mean"]
-
-        # Train regression w and w/o transform
-        regressors = {to: [] for to in transform_options}
-        for (train_features_original, train_targets) in zip(
-            train_features_original_all, train_targets_all
-        ):
-            # This loops over the repetitions
-            for use_transforms in transform_options:
-                if use_transforms:
-                    train_features = transforms[source][model_name].transform_features(
-                        train_features_original
-                    )
-                else:
-                    train_features = train_features_original - things_mean
-
-                regressor = get_regressor(
-                    train_features, train_targets, regressor_type, n_shot
+        # This loops over the repetitions
+        for use_transforms in transform_options:
+            if use_transforms:
+                train_features = transforms[source][model_name].transform_features(
+                    train_features_original
                 )
-                regressors[use_transforms].append(regressor)
+            else:
+                train_features = train_features_original - things_mean
 
-        # Extract and evaluate features w and w/o transform. Due to memory constraints, for each class individually.
-        for i_rep in range(n_reps):
-            accuracies = {a: None for a in transform_options}
-            if i_rep == 0 or data_cfg.resample_testset:
-                test_features_original, test_targets = get_features_targets(
-                    class_id_set_test,
-                    name,
-                    model_params,
-                    source,
-                    module,
-                    module_type,
-                    data_cfg,
-                    n_test,
-                    train=False,
-                    device=device,
-                    superclass_mapping=superclass_mapping,
-                    #sample_per_superclass=sample_per_superclass,
+            regressor = get_regressor(
+                train_features, train_targets, regressor_type, n_shot
+            )
+            regressors[use_transforms].append(regressor)
+
+    # Extract and evaluate features w and w/o transform. Due to memory constraints, for each class individually.
+    for i_rep in range(n_reps):
+        accuracies = {a: None for a in transform_options}
+        if i_rep == 0 or data_cfg.resample_testset:
+            test_features_original, test_targets = get_features_targets(
+                class_id_set_test,
+                name,
+                model_params,
+                source,
+                module,
+                module_type,
+                data_cfg,
+                n_test,
+                train=False,
+                device=device,
+                superclass_mapping=superclass_mapping,
+                # sample_per_superclass=sample_per_superclass,
+            )
+            test_features_original = test_features_original[0]
+            test_targets = test_targets[0]
+
+        for use_transforms in transform_options:
+            if use_transforms:
+                test_features = transforms[source][model_name].transform_features(
+                    test_features_original
                 )
-                test_features_original = test_features_original[0]
-                test_targets = test_targets[0]
+            else:
+                test_features = test_features_original - things_mean
 
-            for use_transforms in transform_options:
-                if use_transforms:
-                    test_features = transforms[source][model_name].transform_features(
-                        test_features_original
-                    )
-                else:
-                    test_features = test_features_original - things_mean
+            acc, pred = test_regression(
+                regressors[use_transforms][i_rep],
+                test_targets,
+                test_features,
+            )
+            accuracies[use_transforms] = acc
 
-                acc, pred = test_regression(
-                    regressors[use_transforms][i_rep],
-                    test_targets,
-                    test_features,
-                )
-                accuracies[use_transforms] = acc
+        # Store results for all classes
+        for use_transforms in transform_options:
+            summary = {
+                "accuracy": accuracies[use_transforms],
+                "model": model_name,
+                "module": model_cfg.module_type,
+                "source": source,
+                "family": family_name,
+                "dataset": data_cfg.name,
+                "transform": use_transforms,
+                "classes": list(set(class_id_set).union(set(class_id_set_test))),
+                "n_train": n_shot,
+                "repetition": i_rep,
+                "regressor": regressor_type,
+                "samples_per_superclass": sample_per_superclass,
+            }
+            if use_transforms:
+                for att in [
+                    "optim",
+                    "eta",
+                    "lmbda",
+                    "alpha",
+                    "tau",
+                    "contrastive_batch_size",
+                ]:
+                    try:
+                        summary[att] = transforms[source][model_name].__getattribute__(
+                            att
+                        )
+                    except:
+                        summary[att] = None
+            results = summary
+    print(summary)  # prints last summary - TODO: remove
 
-            # Store results for all classes
-            for use_transforms in transform_options:
-                summary = {
-                    "accuracy": accuracies[use_transforms],
-                    "model": model_name,
-                    "module": model_cfg.module_type,
-                    "source": source,
-                    "family": family_name,
-                    "dataset": data_cfg.name,
-                    "transform": use_transforms,
-                    "classes": list(set(class_id_set).union(set(class_id_set_test))),
-                    "n_train": n_shot,
-                    "repetition": i_rep,
-                    "regressor": regressor_type,
-                    "samples_per_superclass": sample_per_superclass,
-                }
-                if use_transforms:
-                    for att in [
-                        "optim",
-                        "eta",
-                        "lmbda",
-                        "alpha",
-                        "tau",
-                        "contrastive_batch_size",
-                    ]:
-                        try:
-                            summary[att] = transforms[source][
-                                model_name
-                            ].__getattribute__(att)
-                        except:
-                            summary[att] = None
-                results.append(summary)
-        print(summary)  # prints last summary - TODO: remove
-
-    results = pd.DataFrame(results)
+    results = pd.DataFrame([results])
     return results
 
 
@@ -546,24 +557,43 @@ if __name__ == "__main__":
             class_id_set = [i for i in range(args.n_classes)]
         else:
             class_id_set = args.class_id_set
+        if args.class_id_set_test is not None:
+            class_id_set_test = args.class_id_set_test
+        else:
+            class_id_set_test = class_id_set
     n_shot = args.n_shot
     n_test = args.n_test
     device = torch.device(args.device)
 
     if args.embeddings_root is not None:
-        embeddings = utils.evaluation.load_embeddings(
-            embeddings_root=args.embeddings_root,
-            module="embeddings" if args.module == "penultimate" else "logits",
-        )
+        try:
+            embeddings = utils.evaluation.load_embeddings(
+                embeddings_root=args.embeddings_root,
+                module="embeddings" if args.module == "penultimate" else "logits",
+            )
+        except:
+            print("Could not load embeddings. Continuing without embeddings.")
+            embeddings = None
     else:
         embeddings = None
-    model_cfg, data_cfg = create_config_dicts(args, embeddings.keys())
+    model_cfg, data_cfg = create_config_dicts(
+        args, None if embeddings is None else embeddings.keys()
+    )
 
     # Load transforms
     transforms = {
         source: {model_name: {} for model_name in model_cfg.names}
         for source in model_cfg.sources
     }
+    eta = lmbda = alpha = tau = contrastive_batch_size = None
+    if args.lmbdas is not None:
+        eta, lmbda, alpha, tau, contrastive_batch_size = get_combination(
+            etas=args.etas,
+            lambdas=args.lmbdas,
+            alphas=args.alphas,
+            taus=args.taus,
+            contrastive_batch_sizes=args.contrastive_batch_sizes,
+        )
     for src, model_name in zip(model_cfg.sources, model_cfg.names):
         if args.lmbdas is None:
             transforms[src][model_name] = GlobalTransform(
@@ -574,13 +604,6 @@ if __name__ == "__main__":
                 path_to_features=args.things_embeddings_path,
             )
         else:
-            eta, lmbda, alpha, tau, contrastive_batch_size = get_combination(
-                etas=args.etas,
-                lambdas=args.lmbdas,
-                alphas=args.alphas,
-                taus=args.taus,
-                contrastive_batch_sizes=args.contrastive_batch_sizes,
-            )
             transforms[src][model_name] = GlocalTransform(
                 root=args.transforms_root,
                 source=src,
@@ -598,38 +621,54 @@ if __name__ == "__main__":
     all_results = []
     regressor_types = args.regressor_type
     n_shots = args.n_shot
-    for regressor_type in regressor_types:
-        for shots in n_shots:
-            if regressor_type == "ridge" and shots == 1:
-                continue
-            args.n_shot = shots
-            args.regressor_type = regressor_type
-            model_cfg, data_cfg = create_config_dicts(args, embeddings.keys())
+    for model_id_in_cfg, (src, model_name, module) in enumerate(
+        zip(model_cfg.sources, model_cfg.names, model_cfg.modules)
+    ):
+        for regressor_type in regressor_types:
+            for shots in n_shots:
+                if regressor_type == "ridge" and shots == 1:
+                    continue
+                args.n_shot = shots
+                args.regressor_type = regressor_type
+                model_cfg, data_cfg = create_config_dicts(
+                    args, None if embeddings is None else embeddings.keys()
+                )
 
-            results = run(
-                n_shot=args.n_shot,
-                n_test=args.n_test,
-                n_reps=args.n_reps,
-                class_id_set=class_id_set,
-                device=args.device,
-                model_cfg=model_cfg,
-                data_cfg=data_cfg,
-                transforms=transforms,
-                regressor_type=args.regressor_type,
-                superclass_mapping=superclass_mapping,
-                sample_per_superclass=args.sample_per_superclass,
-            )
-            all_results.append(results)
-    results = pd.concat(all_results)
+                results = run(
+                    n_shot=args.n_shot,
+                    n_test=args.n_test,
+                    n_reps=args.n_reps,
+                    class_id_set=class_id_set,
+                    class_id_set_test=class_id_set_test,
+                    device=args.device,
+                    model_cfg=model_cfg,
+                    data_cfg=data_cfg,
+                    transforms=transforms,
+                    regressor_type=args.regressor_type,
+                    superclass_mapping=superclass_mapping,
+                    sample_per_superclass=args.sample_per_superclass,
+                    model_id_in_cfg=model_id_in_cfg,
+                )
+                all_results.append(results)
+        results = pd.concat(all_results)
 
-    out_path = os.path.join(
-        args.out_dir, args.dataset, args.overall_source, args.module
-    )
-    if not os.path.exists(out_path):
-        print("\nOutput directory does not exist...")
-        print("Creating output directory to save results...\n")
-        os.makedirs(out_path)
+        out_path = os.path.join(
+            args.out_dir,
+            args.dataset + ("" if args.task is None else f"_{args.task}"),
+            model_cfg.sources[model_id_in_cfg],
+            model_cfg.names[model_id_in_cfg],
+            model_cfg.modules[model_id_in_cfg],
+            str(eta),
+            str(lmbda),
+            str(alpha),
+            str(tau),
+            str(contrastive_batch_size),
+        )
+        if not os.path.exists(out_path):
+            print("\nOutput directory does not exist...")
+            print("Creating output directory to save results...\n")
+            os.makedirs(out_path)
 
-    results.to_pickle(os.path.join(out_path, "fewshot_results.pkl"))
+        results.to_pickle(os.path.join(out_path, "fewshot_results.pkl"))
 
     print("Elapsed time (init):", datetime.now() - start_t)
