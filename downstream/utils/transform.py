@@ -3,6 +3,7 @@ import os
 import pickle
 import numpy as np
 import zipfile
+import utils
 
 Array = np.ndarray
 FILE_FORMATS = [".pkl", ".npz"]
@@ -15,6 +16,7 @@ class THINGSFeatureTransform(object):
             model_name: str = "clip_ViT-B/16",
             module: str = "penultimate",
             path_to_transform: str = "/home/space/datasets/things/transforms/transforms_without_norm.pkl",
+            things_embeddings_path: str = "/home/space/datasets/things/embeddings/model_features_per_source.pkl",
             archive_path=None
     ):
         self.source = source
@@ -26,6 +28,20 @@ class THINGSFeatureTransform(object):
             self.transform = np.load(f, mmap_mode='r')
         else:
             self._load_transform(path_to_transform)
+
+        if "mean" in self.transform and "std" in self.transform:
+            self.things_mean = self.transform["mean"]
+            self.things_std = self.transform["std"]
+        else:
+            features_things = utils.evaluation.load_features(path=things_embeddings_path)
+            self.things_mean = np.mean(
+                features_things[source][model_name][self.module],
+                # axis=0,
+            )
+            self.things_std = np.std(
+                features_things[source][model_name][self.module],
+                # axis=0,
+            )
 
     def _load_transform(self, path_to_transform: str) -> None:
         assert os.path.isfile(
@@ -43,9 +59,7 @@ class THINGSFeatureTransform(object):
             )
 
     def transform_features(self, features: Array) -> Array:
-        things_mean = self.transform["mean"]
-        things_std = self.transform["std"]
-        features = (features - things_mean) / things_std
+        features = (features - self.things_mean) / self.things_std
         if "weights" in self.transform:
             features = features @ self.transform["weights"]
             if "bias" in self.transform:
