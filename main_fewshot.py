@@ -657,7 +657,7 @@ if __name__ == "__main__":
             args.dataset + ("" if args.task is None else f"_{args.task}"),
             model_cfg.sources[model_id_in_cfg],
             model_cfg.names[model_id_in_cfg],
-            model_cfg.modules[model_id_in_cfg],
+            model_cfg.module_type,
             str(eta),
             str(lmbda),
             str(alpha),
