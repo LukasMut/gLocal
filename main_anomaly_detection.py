@@ -2,12 +2,14 @@ import argparse
 import json
 from downstream.utils import THINGSFeatureTransform
 from downstream.anomaly_detection.evaluation import ADEvaluator
+from downstream.anomaly_detection.text_evaluation import ADZeroShotEvaluator
 from utils.probing.helpers import model_name_to_thingsvision
 from tqdm.auto import tqdm
 
 
 def main(dataset, data_root, source, model_name, module, path_to_transforms,
-         module_type, num_classes, output_file, archive_path=None, device='cuda'):
+         module_type, num_classes, output_file, shift_indices, archive_path=None,
+         device='cuda', knn_k=5, clip_zero_shot=False):
     output = {
         "dataset": dataset,
         "model": model_name,
@@ -22,11 +24,14 @@ def main(dataset, data_root, source, model_name, module, path_to_transforms,
                    data_dir=data_root
                    )
     if dataset == 'cifar100-shift':
-        options["train_indices"] = [0, 1, 2]
+        options["train_indices"] = shift_indices
 
-    evaluator = ADEvaluator(**options)
+    if clip_zero_shot:
+        evaluator = ADZeroShotEvaluator(**options)
+    else:
+        evaluator = ADEvaluator(**options)
     results = evaluator.evaluate(things_transform=None,
-                                 normal_classes=list(range(num_classes)))
+                                 normal_classes=list(range(num_classes)), knn_k=knn_k)
     output["baseline"] = results
     for path_to_transform in tqdm(path_to_transforms):
         print(path_to_transform)
@@ -57,11 +62,14 @@ if __name__ == "__main__":
     parser.add_argument("--classes", type=int, default=10)
     parser.add_argument('--archive')
     parser.add_argument('--device', default='cuda')
+    parser.add_argument('--clip-zero-shot', action='store_true')
     parser.add_argument(
         "--transform_paths",
         default=["/home/space/datasets/things/transforms/transforms_without_norm.pkl"],
         nargs='+'
     )
+    parser.add_argument('--shift-indices', type=int, nargs='+', default=[0, 1, 2])
+    parser.add_argument('--k', type=int, default=5)
     parser.add_argument("--out")
     args = parser.parse_args()
 
@@ -73,4 +81,7 @@ if __name__ == "__main__":
                       device=args.device,
                       output_file=args.out,
                       path_to_transforms=args.transform_paths,
-                      num_classes=args.classes)
+                      num_classes=args.classes,
+                      shift_indices=args.shift_indices,
+                      knn_k=args.k,
+                      clip_zero_shot=args.clip_zero_shot)
