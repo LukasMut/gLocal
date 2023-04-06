@@ -148,3 +148,11 @@ class ADCIFAR100Shift(BaseADSet):
                 all_indices.append(idx)
         indices = get_target_label_idx(self._test.fine_targets, np.array(all_indices))
         return test_embeddings[indices], self._test.targets[indices] != normal_cls
+
+    def class_names(self):
+        return ['aquatic mammals', 'fish', 'flowers', 'food containers', 'fruit and vegetables',
+                'household electrical devices', 'household furniture', 'insects', 'large carnivores',
+                'large man-made outdoor things',
+                'large natural outdoor scenes', 'large omnivores and herbivores', 'medium-sized mammals',
+                'non-insect invertebrates',
+                'people', 'reptiles', 'small mammals', 'trees', 'vehicles 1', 'vehicles 2']
