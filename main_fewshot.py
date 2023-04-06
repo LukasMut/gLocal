@@ -467,6 +467,7 @@ def run(
             regressors[use_transforms].append(regressor)
 
     # Extract and evaluate features w and w/o transform. Due to memory constraints, for each class individually.
+    results = []
     for i_rep in range(n_reps):
         accuracies = {a: None for a in transform_options}
         if i_rep == 0 or data_cfg.resample_testset:
@@ -518,25 +519,25 @@ def run(
                 "regressor": regressor_type,
                 "samples_per_superclass": sample_per_superclass,
             }
-            if use_transforms:
-                for att in [
-                    "optim",
-                    "eta",
-                    "lmbda",
-                    "alpha",
-                    "tau",
-                    "contrastive_batch_size",
-                ]:
-                    try:
-                        summary[att] = transforms[source][model_name].__getattribute__(
-                            att
-                        )
-                    except:
-                        summary[att] = None
-            results = summary
+            for att in [
+                "optim",
+                "eta",
+                "lmbda",
+                "alpha",
+                "tau",
+                "contrastive_batch_size",
+            ]:
+                try:
+                    summary[att] = transforms[source][model_name].__getattribute__(
+                        att
+                    )
+                except:
+                    summary[att] = None
+
+            results.append(summary)
     print(summary)  # prints last summary - TODO: remove
 
-    results = pd.DataFrame([results])
+    results = pd.DataFrame(results)
     return results
 
 
@@ -634,6 +635,9 @@ if __name__ == "__main__":
                     args, None if embeddings is None else embeddings.keys()
                 )
 
+                np.random.seed(int(1e5))
+                torch.manual_seed(int(1e5))
+
                 results = run(
                     n_shot=args.n_shot,
                     n_test=args.n_test,
@@ -663,6 +667,7 @@ if __name__ == "__main__":
             str(alpha),
             str(tau),
             str(contrastive_batch_size),
+            str(args.sample_per_superclass),
         )
         if not os.path.exists(out_path):
             print("\nOutput directory does not exist...")
