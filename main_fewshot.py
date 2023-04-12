@@ -13,6 +13,7 @@ from thingsvision import get_extractor
 
 import utils
 from downstream.fewshot.breeds_sets import get_breeds_task
+from downstream.fewshot.cifar import get_cifar100_coarse_map
 from downstream.fewshot.data import load_dataset
 from downstream.fewshot.predictors import test_regression, get_regressor
 from downstream.fewshot.utils import is_embedding_source
@@ -234,7 +235,7 @@ def get_features_targets(
     sample_per_superclass: bool = False,
 ):
     ids_subset = class_ids if ids_subset is None else ids_subset
-    dataset_is_embedded = is_embedding_source(source)
+    dataset_is_embedded = is_embedding_source(source) or embeddings is not None
 
     if dataset_is_embedded:
         # Load the dataset from an embedding source
@@ -253,7 +254,7 @@ def get_features_targets(
             embeddings_path = os.path.join(
                 data_cfg.embeddings_root, source, complete_model_name, module_type
             )
-            if data_cfg.name != "imagenet":
+            if data_cfg.name not in ["imagenet"]:
                 # For all other datasets, we can load the embeddings from a single file
                 with open(os.path.join(embeddings_path, "embeddings.pkl"), "rb") as f:
                     embeddings = pickle.load(f)
@@ -369,16 +370,16 @@ def create_config_dicts(args, embedding_keys=None) -> Tuple[FrozenDict, FrozenDi
     model_cfg.sources = args.sources
     model_cfg.input_dim = args.input_dim
     if embedding_keys is not None:
-        model_cfg.embeddings_root = args.embeddings_root.split("/")[-1]
-        model_cfg.names = embedding_keys
+        model_cfg.embeddings_root = args.embeddings_root  # .split("/")[-1]
+        model_cfg.names = [k for k in embedding_keys]
     else:
         if hasattr(args, "embeddings_root"):
             embeddings_root = args.embeddings_root
         else:
             embeddings_root = None
         model_cfg.embeddings_root = embeddings_root
-        data_cfg.embeddings_root = embeddings_root
         model_cfg.names = args.model_names
+    data_cfg.embeddings_root = model_cfg.embeddings_root
     model_cfg.modules = get_module_names(model_config, model_cfg.names, args.module)
     model_cfg = config_dict.FrozenConfigDict(model_cfg)
     data_cfg.root = args.data_root
@@ -407,6 +408,7 @@ def run(
     superclass_mapping: Optional[Dict] = None,
     sample_per_superclass: bool = False,
     model_id_in_cfg: int = 0,
+    embeddings: Optional[Dict] = None,
 ):
     transform_options = [False, True]
 
@@ -424,6 +426,9 @@ def run(
     family_name = utils.analyses.get_family_name(model_name)
     module_type = model_cfg.module_type
 
+    if embeddings is not None:
+        embeddings = embeddings[model_name]
+
     # Extract train features
     train_features_original_all, train_targets_all = get_features_targets(
         class_id_set,
@@ -440,6 +445,7 @@ def run(
         device=device,
         superclass_mapping=superclass_mapping,
         sample_per_superclass=sample_per_superclass,
+        embeddings=embeddings,
     )
 
     try:
@@ -484,6 +490,7 @@ def run(
                 device=device,
                 superclass_mapping=superclass_mapping,
                 # sample_per_superclass=sample_per_superclass,
+                embeddings=embeddings,
             )
             test_features_original = test_features_original[0]
             test_targets = test_targets[0]
@@ -528,9 +535,7 @@ def run(
                 "contrastive_batch_size",
             ]:
                 try:
-                    summary[att] = transforms[source][model_name].__getattribute__(
-                        att
-                    )
+                    summary[att] = transforms[source][model_name].__getattribute__(att)
                 except:
                     summary[att] = None
 
@@ -552,6 +557,9 @@ if __name__ == "__main__":
     args = parseargs()
     if args.task in BREEDS_TASKS:
         class_id_set, class_id_set_test, superclass_mapping = get_breeds_task(args.task)
+    elif args.dataset == "cifar100" and args.task == "coarse":
+        superclass_mapping = get_cifar100_coarse_map()
+        class_id_set = class_id_set_test = [i for i in range(100)]
     else:
         superclass_mapping = None
         if args.class_id_set is None:
@@ -566,6 +574,7 @@ if __name__ == "__main__":
     n_test = args.n_test
     device = torch.device(args.device)
 
+    # Load embeddings
     if args.embeddings_root is not None:
         try:
             embeddings = utils.evaluation.load_embeddings(
@@ -575,6 +584,13 @@ if __name__ == "__main__":
         except:
             print("Could not load embeddings. Continuing without embeddings.")
             embeddings = None
+        try:
+            # Remove dicitonary level if it exists
+            embeddings = embeddings[
+                "embeddings" if args.module == "penultimate" else "logits"
+            ]
+        except:
+            pass
     else:
         embeddings = None
     model_cfg, data_cfg = create_config_dicts(
@@ -652,6 +668,7 @@ if __name__ == "__main__":
                     superclass_mapping=superclass_mapping,
                     sample_per_superclass=args.sample_per_superclass,
                     model_id_in_cfg=model_id_in_cfg,
+                    embeddings=embeddings,
                 )
                 all_results.append(results)
         results = pd.concat(all_results)

@@ -47,7 +47,7 @@ def load_dataset(
     if name == "cifar100":
         dataset_class = CIFAR100
         if embeddings is not None:
-            dataset_class = embed_dataset(dataset_class, embeddings)
+            dataset_class = embed_dataset(dataset_class, embeddings["train" if train else "test"])
         dataset = dataset_class(
             root=data_dir,
             train=train,
@@ -123,6 +123,8 @@ def embed_dataset(dataset, embeddings):
         if self.target_transform:
             label = self.target_transform(label)
         return embedding, label
+
+    print("Dataset embedded.")
 
     return type(
         dataset.__name__,
