@@ -215,7 +215,6 @@ def get_subset_indices(dataset, cls_id: Union[int, List[int]]):
         ]
     return subset_indices
 
-
 def get_features_targets(
     class_ids,
     model_name,
