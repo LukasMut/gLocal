@@ -41,7 +41,7 @@ class GlobalTransform:
     def _load_transform(self, path_to_transform: str) -> None:
         assert os.path.isfile(
             path_to_transform
-        ), "\nThe provided path does not point to a file.\n"
+        ), f"\nThe provided path does not point to a valid file:{path_to_transform}\n"
         if path_to_transform.endswith("pkl"):
             with open(path_to_transform, "rb") as f:
                 transforms = pickle.load(f)
@@ -79,25 +79,31 @@ class GlocalTransform:
         self,
     ) -> None:
         path_to_transform = os.path.join(
-            self.root,
-            self.source,
-            self.model,
-            self.module,
-            self.optim.lower(),
-            self.eta,
-            self.lmbda,
-            self.alpha,
-            self.tau,
-            self.contrastive_batch_size,
+            *[
+                str(arg)
+                for arg in (
+                    self.root,
+                    self.source,
+                    self.model,
+                    self.module,
+                    self.optim.lower(),
+                    self.eta,
+                    self.lmbda,
+                    self.alpha,
+                    self.tau,
+                    self.contrastive_batch_size,
+                )
+            ]
         )
         self.transform = self._load_transform(path_to_transform)
 
     @staticmethod
     def _load_transform(path_to_transform: str) -> Any:
+        path_to_transform_file = os.path.join(path_to_transform, "transform.npz")
         assert os.path.isfile(
-            path_to_transform
-        ), "\nThe provided path does not point to a valid file.\n"
-        transform = np.load(os.path.join(path_to_transform, "transform.npz"))
+            path_to_transform_file
+        ), f"\nThe provided path does not point to a valid file:{path_to_transform_file}\n"
+        transform = np.load(path_to_transform_file)
         return transform
 
     def transform_features(self, features: Array) -> Array:
