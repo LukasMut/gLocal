@@ -209,9 +209,14 @@ def evaluate(args) -> None:
                     path_to_transform=args.transforms_path,
                     path_to_features=args.things_embeddings_path,
                 )
-
         if model_name.startswith("OpenCLIP"):
-            name, variant, data = model_name.split("_")
+            if "laion" in model_name:
+                meta_vars = model_name.split("_")
+                name = meta_vars[0]
+                variant = meta_vars[1]
+                data = "_".join(meta_vars[2:])
+            else:
+                name, variant, data = model_name.split("_")
             model_params = dict(variant=variant, dataset=data)
         elif model_name.startswith("clip"):
             name, variant = model_name.split("_")
