@@ -302,13 +302,8 @@ def get_features_targets(
             if type(cls_id) == int and cls_id not in ids_subset:
                 continue
             subset_indices = get_subset_indices(dataset, cls_id)
-            try:
-                indices += list(np.random.choice(subset_indices, size=batch_size, replace=False))
-            except ValueError as a:
-                print(repr(a))
-                print(cls_id)
-                print(len(subset_indices))
-                raise ValueError
+            indices += list(np.random.choice(subset_indices, size=batch_size, replace=False))
+
         subset = torch.utils.data.Subset(
             dataset,
             indices,
@@ -676,6 +671,7 @@ if __name__ == "__main__":
         results = pd.concat(all_results)
         results["lmbda"] = lmbda
         results["eta"] = eta
+        results["optim"] = args.optim.lower()
 
         out_path = os.path.join(
                 args.out_dir,
