@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 import numpy as np
@@ -10,18 +11,20 @@ Array = np.ndarray
 def train_regression(train_targets: Array, train_features: Array, k: int = None):
     n_train = train_features.shape[0]
     print("N. train:", n_train)
+    start_t = datetime.now()
 
     reg = LogisticRegressionCV(
         Cs=(1e-4, 1e-3, 1e-2, 1e-1, 1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6),
         fit_intercept=True,
         penalty="l2",
-        # scoring=make_scorer(accuracy_score),
         cv=k,
         max_iter=500,
-        solver="sag",
+        #solver="sag",
     )
 
     reg.fit(train_features, train_targets)
+
+    print("Finished training. Elapsed time:", datetime.now() - start_t)
 
     return reg
 
@@ -29,6 +32,7 @@ def train_regression(train_targets: Array, train_features: Array, k: int = None)
 def train_knn(train_targets: Array, train_features: Array, k: int = 1):
     n_train = train_features.shape[0]
     print("N. train:", n_train)
+    start_t = datetime.now()
 
     reg = KNeighborsRegressor(
         n_neighbors=k,
@@ -36,6 +40,8 @@ def train_knn(train_targets: Array, train_features: Array, k: int = 1):
     )
 
     reg.fit(train_features, train_targets)
+
+    print("Finished training. Elapsed time:", datetime.now() - start_t)
 
     return reg
 
