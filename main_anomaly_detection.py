@@ -34,7 +34,6 @@ def main(dataset, data_root, source, model_name, module, path_to_transforms,
                                  normal_classes=list(range(num_classes)), knn_k=knn_k)
     output["baseline"] = results
     for path_to_transform in tqdm(path_to_transforms):
-        print(path_to_transform)
         things_transform = THINGSFeatureTransform(source=source, model_name=model_name,
                                                   module=module_type,
                                                   archive_path=archive_path,

@@ -29,7 +29,7 @@ class ImageIterator:
 class ADZeroShotEvaluator:
 
     def __init__(self, dataset, model_name, source, module, model_params, data_dir,
-                 device='cuda', cache_dir='cache', clip_text_eval=False, **kwargs):
+                 device='cuda', cache_dir='cache', **kwargs):
 
         self.extractor = get_extractor(
             model_name=model_name,
@@ -113,7 +113,7 @@ class ADZeroShotEvaluator:
         self.normal_anchors = torch.stack(self.normal_anchors)
         self.anomaly_anchors = torch.stack(self.anomaly_anchors)
 
-    def evaluate(self, normal_classes, knn_k=5, things_transform=None):
+    def evaluate(self, normal_classes, things_transform=None, *args, **kwargs):
 
         test_features = self.test_features
 

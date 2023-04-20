@@ -2,7 +2,6 @@ import numpy as np
 from .cifar import ADCIFAR10, ADCIFAR100, ADCIFAR100Shift, ADCIFAR100Coarse
 import torch
 from sklearn.metrics import roc_auc_score
-from .imagenet30 import ADImageNet
 from .dtd import ADDTD
 from .fine_grained import ADFlowers
 from thingsvision import get_extractor
@@ -52,8 +51,6 @@ class ADEvaluator:
             anomaly_ds = ADCIFAR10(transform=transform, data_dir=data_dir)
         elif dataset == 'cifar100':
             anomaly_ds = ADCIFAR100(transform=transform, data_dir=data_dir)
-        elif dataset == 'imagenet':
-            anomaly_ds = ADImageNet(transform=transform, data_dir=data_dir)
         elif dataset == 'dtd':
             anomaly_ds = ADDTD(transform=transform, data_dir=data_dir)
         elif dataset == 'flowers':
