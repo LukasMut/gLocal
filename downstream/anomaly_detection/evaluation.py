@@ -40,10 +40,13 @@ class ADEvaluator:
         self.device = device
         self.module = module
 
-        variant = ''
         if model_params is not None and "variant" in model_params:
             variant = model_params['variant']
-        cache_path = f'{dataset}_{model_name}_{variant}_{module}.npz'
+            training_dataset = model_params['dataset']
+            cache_path = f'{dataset}_{model_name}_{variant}_{training_dataset}_{module}.npz'
+        else:
+            cache_path = f'{dataset}_{model_name}__{module}.npz'
+
         cache_path = cache_path.replace('/', '-')
         self.cache_path = os.path.join(cache_dir, cache_path)
 
