@@ -145,7 +145,7 @@ def feature_extraction(
             data = load_dataset(
                 name=dataset,
                 data_dir=os.path.join(data_root, dataset),
-                stimulus_set=stimulus_set if dataset == "free-arrangment" else None,
+                stimulus_set=stimulus_set if dataset == "free-arrangement" else None,
                 category=category if dataset == "peterson" else None,
                 transform=transformations,
             )
