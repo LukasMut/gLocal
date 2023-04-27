@@ -178,4 +178,6 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         data_root=args.data_root,
         features_root=args.features_root,
+        category=args.category,
+        stimulus_set=args.stimulus_set,
     )
