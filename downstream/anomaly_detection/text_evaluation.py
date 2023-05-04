@@ -2,7 +2,6 @@ import numpy as np
 from .cifar import ADCIFAR10, ADCIFAR100, ADCIFAR100Shift, ADCIFAR100Coarse
 import torch
 from sklearn.metrics import roc_auc_score
-from .imagenet30 import ADImageNet
 from .dtd import ADDTD
 from .fine_grained import ADFlowers
 from thingsvision import get_extractor
@@ -42,32 +41,41 @@ class ADZeroShotEvaluator:
         self.device = device
         self.module = module
 
-        variant = ''
-        if model_params is not None and "variant" in model_params:
-            variant = model_params['variant']
-        cache_path = f'{dataset}_{model_name}_{variant}_{module}.npz'
-        cache_path = cache_path.replace('/', '-')
-        self.cache_path = os.path.join(cache_dir, cache_path)
+        mode = 'ovr'
+        if dataset.endswith('-rvo'):
+            mode = 'rvo'
+            dataset.replace('-rvo', '')
 
         if dataset == 'cifar10':
-            anomaly_ds = ADCIFAR10(transform=transform, data_dir=data_dir)
+            anomaly_ds = ADCIFAR10(transform=transform, data_dir=data_dir, mode=mode)
         elif dataset == 'cifar100':
-            anomaly_ds = ADCIFAR100(transform=transform, data_dir=data_dir)
-        elif dataset == 'imagenet':
-            anomaly_ds = ADImageNet(transform=transform, data_dir=data_dir)
+            anomaly_ds = ADCIFAR100(transform=transform, data_dir=data_dir, mode=mode)
         elif dataset == 'dtd':
-            anomaly_ds = ADDTD(transform=transform, data_dir=data_dir)
+            anomaly_ds = ADDTD(transform=transform, data_dir=data_dir, mode=mode)
         elif dataset == 'flowers':
-            anomaly_ds = ADFlowers(transform=transform, data_dir=data_dir)
+            anomaly_ds = ADFlowers(transform=transform, data_dir=data_dir, mode=mode)
         elif dataset == 'cifar100-shift':
-            anomaly_ds = ADCIFAR100Shift(transform=transform, data_dir=data_dir, **kwargs)
+            anomaly_ds = ADCIFAR100Shift(transform=transform, data_dir=data_dir, mode=mode, **kwargs)
         elif dataset == 'cifar100-coarse':
-            anomaly_ds = ADCIFAR100Coarse(transform=transform, data_dir=data_dir)
+            anomaly_ds = ADCIFAR100Coarse(transform=transform, data_dir=data_dir, mode=mode)
         else:
             raise ValueError()
 
         self.dataset = anomaly_ds
         self.dataset.setup()
+
+        dataset_key = self.dataset.cache_name()
+        if model_params is not None and "variant" in model_params:
+            variant = model_params['variant']
+            if 'dataset' in model_params:
+                training_dataset = model_params['dataset']
+                cache_path = f'{dataset_key}_{model_name}_{variant}_{training_dataset}_{module}.npz'
+            else:
+                cache_path = f'{dataset_key}_{model_name}_{variant}_{module}.npz'
+        else:
+            cache_path = f'{dataset_key}_{model_name}__{module}.npz'
+        cache_path = cache_path.replace('/', '-')
+        self.cache_path = os.path.join(cache_dir, cache_path)
 
         if os.path.exists(self.cache_path):
             saved_features = np.load(self.cache_path)
@@ -130,7 +138,7 @@ class ADZeroShotEvaluator:
         aucs = []
         for normal_cls in normal_classes:
             test_reduced, test_reduced_labels = self.dataset.reduce_test(test_embeddings=test_features,
-                                                                         normal_cls=normal_cls)
+                                                                         cls=normal_cls)
 
             text_query = torch.stack([normal_anchors[normal_cls], anomaly_anchors[normal_cls]])
             sim = F.softmax(torch.mm(test_reduced, text_query.t()), dim=-1)

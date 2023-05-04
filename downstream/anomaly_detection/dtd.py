@@ -23,11 +23,5 @@ class ADDTD(BaseADSet):
         test.targets = test._labels
         return train, test
 
-    def reduce_train(self, train_embeddings, normal_cls):
-        dataset_targets = self._train.targets
-        train_idx_normal = get_target_label_idx(dataset_targets, np.array([normal_cls]))
-        return train_embeddings[train_idx_normal]
-
-    def reduce_test(self, test_embeddings, normal_cls):
-        dataset_targets = np.array(self._test.targets)
-        return test_embeddings, dataset_targets != normal_cls
+    def cache_name(self):
+        return 'dtd'
