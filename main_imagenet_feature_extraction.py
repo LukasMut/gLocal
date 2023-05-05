@@ -103,7 +103,13 @@ def load_extractor(model_cfg: Dict[str, str]) -> Any:
     """Load extractor for specific model and source."""
     model_name = model_cfg["model"]
     if model_name.startswith("OpenCLIP"):
-        name, variant, data = model_name.split("_")
+        if "laion" in model_name:
+            meta_vars = model_name.split("_")
+            name = meta_vars[0]
+            variant = meta_vars[1]
+            data = "_".join(meta_vars[2:])
+        else:
+            name, variant, data = model_name.split("_")
         model_params = dict(variant=variant, dataset=data)
     elif model_name.startswith("clip"):
         name, variant = model_name.split("_")

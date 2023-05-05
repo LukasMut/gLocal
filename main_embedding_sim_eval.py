@@ -1,6 +1,7 @@
 import argparse
 import os
 import random
+import re
 import warnings
 from collections import defaultdict
 from typing import Any, Tuple
@@ -137,6 +138,19 @@ def evaluate(args) -> None:
     elif args.dataset == "things":
         sort = args.dataset
         object_names = utils.evaluation.get_things_objects(args.data_root)
+    elif args.dataset == "peterson":
+        sort = args.dataset
+        if args.data_root.endswith("/"):
+            root = "/".join(args.data_root.split("/")[:-2] + [args.dataset])
+        else:
+            root = "/".join(args.data_root.split("/")[:-1] + [args.dataset])
+        object_names = sorted(
+            [
+                re.sub(r"(.png|.jpg)", "", f.name)
+                for f in os.scandir(os.path.join(root, args.category, "images"))
+                if re.search(r"(.png|.jpg)$", f.name)
+            ]
+        )
     else:
         sort = "alphanumeric"
         object_names = None
@@ -153,6 +167,7 @@ def evaluate(args) -> None:
         name=args.dataset,
         data_dir=data_cfg.root,
         stimulus_set=data_cfg.stimulus_set,
+        category=data_cfg.category,
     )
     if args.use_transforms:
         things_features = utils.evaluation.load_features(
@@ -189,9 +204,6 @@ def evaluate(args) -> None:
                 features - things_features_current_model.mean()
             ) / things_features_current_model.std()
             features = features @ transform
-            if args.transform_type == "with_norm":
-                features = torch.from_numpy(features)
-                features = F.normalize(features, dim=1).cpu().numpy()
 
         rsa_stats = utils.evaluation.perform_rsa(
             dataset=dataset,
@@ -224,7 +236,7 @@ def evaluate(args) -> None:
 
     # convert results into Pandas DataFrame
     results = pd.DataFrame(results)
-    out_path = os.path.join(args.out_path, args.dataset, model_cfg.source, args.module)
+    out_path = os.path.join(args.out_path, args.category, model_cfg.source, args.module)
     if not os.path.exists(out_path):
         print("\nCreating output directory...\n")
         os.makedirs(out_path)

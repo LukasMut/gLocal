@@ -21,6 +21,7 @@ from tqdm import tqdm
 
 import utils
 from data import DATASETS, load_dataset
+from utils.evaluation.transforms import GlobalTransform
 
 FrozenDict = Any
 Tensor = torch.Tensor
@@ -38,6 +39,12 @@ def parseargs():
         "--things_embeddings_path",
         type=str,
         default="/home/space/datasets/things/embeddings/model_features_per_source.pkl",
+        help="path/to/things/features; necessary if you use transforms",
+    )
+    aa(
+        "--transforms_path",
+        type=str,
+        default="/home/space/datasets/things/transforms/transforms_without_norm.pkl",
         help="path/to/things/features; necessary if you use transforms",
     )
     aa("--dataset", type=str, help="Which dataset to use", choices=DATASETS)
@@ -128,8 +135,8 @@ def parseargs():
     aa(
         "--transform_type",
         type=str,
-        default="without_norm",
-        choices=["without_norm", "with_norm"],
+        default="global",
+        choices=["global", "glocal"],
         help="type of transformation matrix being used",
     )
     aa(
@@ -188,21 +195,28 @@ def evaluate(args) -> None:
     """Evaluate the alignment of neural nets with human (pairwise) similarity judgments."""
     device = torch.device(args.device)
     model_cfg, data_cfg = create_config_dicts(args)
-    if args.use_transforms:
-        things_features = utils.evaluation.load_features(
-            path=args.things_embeddings_path
-        )
-        transforms = utils.evaluation.load_transforms(
-            root=args.data_root, type=args.transform_type
-        )
     results = []
     model_features = defaultdict(lambda: defaultdict(dict))
     for i, (model_name, source) in tqdm(
         enumerate(zip(model_cfg.names, model_cfg.sources)), desc="Model"
     ):
-
+        if args.use_transforms:
+            if args.transform_type == "global":
+                transform = GlobalTransform(
+                    source=source,
+                    model_name=model_name,
+                    module_name=args.module,
+                    path_to_transform=args.transforms_path,
+                    path_to_features=args.things_embeddings_path,
+                )
         if model_name.startswith("OpenCLIP"):
-            name, variant, data = model_name.split("_")
+            if "laion" in model_name:
+                meta_vars = model_name.split("_")
+                name = meta_vars[0]
+                variant = meta_vars[1]
+                data = "_".join(meta_vars[2:])
+            else:
+                name, variant, data = model_name.split("_")
             model_params = dict(variant=variant, dataset=data)
         elif model_name.startswith("clip"):
             name, variant = model_name.split("_")
@@ -219,13 +233,13 @@ def evaluate(args) -> None:
             pretrained=not args.not_pretrained,
             model_parameters=model_params,
         )
-
         if model_name.endswith("ecoset"):
             transformations = extractor.get_transformations(
                 resize_dim=128, crop_dim=128
             )
         else:
             transformations = extractor.get_transformations()
+
         if args.dataset == "peterson":
             transformations = Compose(
                 [Lambda(lambda img: img.convert("RGB")), transformations]
@@ -277,31 +291,7 @@ def evaluate(args) -> None:
             )
 
         if args.use_transforms:
-            try:
-                transform = transforms[source][model_name][args.module]
-            except KeyError:
-                warnings.warn(
-                    message=f"\nCould not find transformation matrix for {model_name}.\nSkipping evaluation for {model_name} and continuing with next model...\n",
-                    category=UserWarning,
-                )
-                continue
-            try:
-                things_features_current_model = things_features[source][model_name][
-                    args.module
-                ]
-            except KeyError:
-                warnings.warn(
-                    message=f"\nCould not find embedding matrix of {model_name} for the THINGS dataset.\nSkipping evaluation for {model_name} and continuing with next model...\n",
-                    category=UserWarning,
-                )
-                continue
-            features = (
-                features - things_features_current_model.mean()
-            ) / things_features_current_model.std()
-            features = features @ transform
-            if args.transform_type == "with_norm":
-                features = torch.from_numpy(features)
-                features = F.normalize(features, dim=1).cpu().numpy()
+            features = transform.transform_features(features)
         try:
             rsa_stats = utils.evaluation.perform_rsa(
                 dataset=dataset,

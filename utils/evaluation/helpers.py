@@ -62,14 +62,9 @@ def load_embeddings(
             if sort:
                 filenames = embedding_file["filenames"]
                 filenames = convert_filenames(filenames)
-                if sort == "things":
-                    try:
-                        assert isinstance(
-                            object_names, Union[List[str], Array]
-                        ), "\nTo sort features according to the THINGS object names, a list (or an array) of object names is required.\n"
-                    except TypeError:
-                        print("\nChecking type of object names failed.\n")
-                    order = get_order(object_names)
+                if (sort == "things" or sort == "peterson"):
+                    assert object_names, "\nTo sort features according to the THINGS object names, a list (or an array) of object names is required.\n"
+                    order = get_order(filenames, object_names)
                 else:  # alphanumeric sorting for multi-arrangement data
                     if stimulus_set:
                         sorted_names = sorted(

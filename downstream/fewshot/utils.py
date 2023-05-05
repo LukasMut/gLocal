@@ -1,6 +1,7 @@
 import torch
+import numpy as np
 
-from main_fewshot import Array
+Array = np.ndarray
 
 
 def is_embedding_source(source):
