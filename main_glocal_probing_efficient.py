@@ -541,34 +541,6 @@ if __name__ == "__main__":
         contrastive_batch_sizes=args.contrastive_batch_sizes,
     )
 
-    optim_cfg = create_optimization_config(
-        args=args,
-        eta=eta,
-        lmbda=lmbda,
-        alpha=alpha,
-        tau=tau,
-        contrastive_batch_size=contrastive_batch_size,
-    )
-
-    ooo_choices, cv_results, transform, things_mean, things_std = run(
-        features=model_features,
-        imagenet_features_root=args.imagenet_features_root,
-        data_root=args.data_root,
-        optim_cfg=optim_cfg,
-        n_objects=args.n_objects,
-        device=args.device,
-        rnd_seed=args.rnd_seed,
-        num_processes=args.num_processes,
-        features_format=args.features_format,
-    )
-    probing_performances = get_mean_cv_performances(cv_results)
-    save_results(
-        args=args,
-        optim_cfg=optim_cfg,
-        probing_performances=probing_performances,
-        ooo_choices=ooo_choices,
-    )
-
     out_path = os.path.join(
         args.probing_root,
         "results",
@@ -585,20 +557,54 @@ if __name__ == "__main__":
     if not os.path.exists(out_path):
         os.makedirs(out_path, exist_ok=True)
 
-    if optim_cfg["use_bias"]:
-        with open(os.path.join(out_path, "transform.npz"), "wb") as f:
-            np.savez_compressed(
-                file=f,
-                weights=transform["weights"],
-                bias=transform["bias"],
-                mean=things_mean,
-                std=things_std,
-            )
+    out_file_path = os.path.join(out_path, "transform.npz")
+
+    if os.path.isfile(out_file_path):
+        print("Results already exist. Skipping...")
+        print(f"Results file: {out_file_path}")
     else:
-        with open(os.path.join(out_path, "transform.npz"), "wb") as f:
-            np.savez_compressed(
-                file=f,
-                weights=transform["weights"],
-                mean=things_mean,
-                std=things_std,
-            )
+        optim_cfg = create_optimization_config(
+            args=args,
+            eta=eta,
+            lmbda=lmbda,
+            alpha=alpha,
+            tau=tau,
+            contrastive_batch_size=contrastive_batch_size,
+        )
+
+        ooo_choices, cv_results, transform, things_mean, things_std = run(
+            features=model_features,
+            imagenet_features_root=args.imagenet_features_root,
+            data_root=args.data_root,
+            optim_cfg=optim_cfg,
+            n_objects=args.n_objects,
+            device=args.device,
+            rnd_seed=args.rnd_seed,
+            num_processes=args.num_processes,
+            features_format=args.features_format,
+        )
+        probing_performances = get_mean_cv_performances(cv_results)
+        save_results(
+            args=args,
+            optim_cfg=optim_cfg,
+            probing_performances=probing_performances,
+            ooo_choices=ooo_choices,
+        )
+
+        if optim_cfg["use_bias"]:
+            with open(out_file_path, "wb") as f:
+                np.savez_compressed(
+                    file=f,
+                    weights=transform["weights"],
+                    bias=transform["bias"],
+                    mean=things_mean,
+                    std=things_std,
+                )
+        else:
+            with open(out_file_path, "wb") as f:
+                np.savez_compressed(
+                    file=f,
+                    weights=transform["weights"],
+                    mean=things_mean,
+                    std=things_std,
+                )

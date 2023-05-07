@@ -8,7 +8,9 @@ from sklearn.neighbors import KNeighborsRegressor
 Array = np.ndarray
 
 
-def train_regression(train_targets: Array, train_features: Array, k: int = None):
+def train_regression(
+    train_targets: Array, train_features: Array, k: int = None, solver: str = "lbfgs"
+):
     n_train = train_features.shape[0]
     print("N. train:", n_train)
     start_t = datetime.now()
@@ -19,7 +21,7 @@ def train_regression(train_targets: Array, train_features: Array, k: int = None)
         penalty="l2",
         cv=k,
         max_iter=500,
-        #solver="sag",
+        solver=solver,
     )
 
     reg.fit(train_features, train_targets)
@@ -72,9 +74,10 @@ def regress(
     test_features: Array,
     k: int = None,
     regressor: str = "ridge",
+    solver: str = "lbfgs",
 ):
     if regressor == "ridge":
-        reg = train_regression(train_targets, train_features, k)
+        reg = train_regression(train_targets, train_features, k, solver=solver)
     if regressor == "knn":
         reg = train_knn(train_targets, train_features)
     else:
@@ -83,11 +86,15 @@ def regress(
     return acc, preds
 
 
-def get_regressor(train_features: Array, train_targets: Array, regressor_type: str, k: Optional[int] = None):
+def get_regressor(
+    train_features: Array,
+    train_targets: Array,
+    regressor_type: str,
+    k: Optional[int] = None,
+    solver: str = "lbfgs",
+):
     if regressor_type == "ridge":
-        regressor = train_regression(
-                train_targets, train_features, k=k
-        )
+        regressor = train_regression(train_targets, train_features, k=k, solver=solver)
     elif regressor_type == "knn":
         regressor = train_knn(train_targets, train_features)
     else:

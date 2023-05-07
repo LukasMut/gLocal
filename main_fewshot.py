@@ -136,6 +136,13 @@ def parseargs():
         action="store_true",
         help="Whether to sample the shots for each superclass, rather than each class.",
     )
+    aa(
+        "--solver",
+        type=str,
+        default="lbfgs",
+        help="Solver to use for ridge regression",
+        choices=["lbfgs", "sag"],
+    )
     # Transform arguments
     aa("--optim", type=str, default="SGD", choices=["Adam", "AdamW", "SGD"])
     aa(
@@ -173,9 +180,10 @@ def parseargs():
         metavar="B_C",
     )
     aa(
-        "--glob",
-        action="store_true",
-        help="Whether to load global probes.",
+        "--transform_type",
+        type=str,
+        default="glocal",
+        choices=["glocal", "global", "old"],
     )
     # Misc arguments
     aa("--device", type=str, default="cpu", choices=["cpu", "gpu"])
@@ -216,6 +224,7 @@ def get_subset_indices(dataset, cls_id: Union[int, List[int]]):
         ]
     return subset_indices
 
+
 def get_features_targets(
     class_ids,
     model_name,
@@ -250,10 +259,15 @@ def get_features_targets(
             "" if model_params is None else ("_" + model_params["variant"])
         )
         try:
+            complete_model_name += "_" + model_params["dataset"]
+        except (TypeError, KeyError):
+            pass
+        try:
             # Try to load the embeddings from disk
             embeddings_path = os.path.join(
                 data_cfg.embeddings_root, source, complete_model_name, module_type
             )
+            print(embeddings_path)
             if data_cfg.name not in ["imagenet"]:
                 # For all other datasets, we can load the embeddings from a single file
                 with open(os.path.join(embeddings_path, "embeddings.pkl"), "rb") as f:
@@ -302,7 +316,9 @@ def get_features_targets(
             if type(cls_id) == int and cls_id not in ids_subset:
                 continue
             subset_indices = get_subset_indices(dataset, cls_id)
-            indices += list(np.random.choice(subset_indices, size=batch_size, replace=False))
+            indices += list(
+                np.random.choice(subset_indices, size=batch_size, replace=False)
+            )
 
         subset = torch.utils.data.Subset(
             dataset,
@@ -405,8 +421,10 @@ def run(
     sample_per_superclass: bool = False,
     model_id_in_cfg: int = 0,
     embeddings: Optional[Dict] = None,
+    solver: str = "lbfgs",
+    run_baseline: bool = True,
 ):
-    transform_options = [False, True]
+    transform_options = [False, True] if run_baseline else [True]
 
     if class_id_set_test is None:
         class_id_set_test = class_id_set
@@ -464,7 +482,7 @@ def run(
                 train_features = train_features_original - things_mean
 
             regressor = get_regressor(
-                train_features, train_targets, regressor_type, n_shot
+                train_features, train_targets, regressor_type, n_shot, solver=solver
             )
             regressors[use_transforms].append(regressor)
 
@@ -568,12 +586,12 @@ if __name__ == "__main__":
     n_test = args.n_test
     device = torch.device(args.device)
 
-    # Load embeddings
+    # Load embeddings for all models
     if args.embeddings_root is not None:
         try:
             embeddings = utils.evaluation.load_embeddings(
-                    embeddings_root=args.embeddings_root,
-                    module="embeddings" if args.module == "penultimate" else "logits",
+                embeddings_root=args.embeddings_root,
+                module="embeddings" if args.module == "penultimate" else "logits",
             )
         except:
             print("Could not load embeddings. Continuing without embeddings.")
@@ -587,38 +605,104 @@ if __name__ == "__main__":
             pass
     else:
         embeddings = None
-    model_cfg, data_cfg = create_config_dicts(
-            args, None
-    )
+    model_cfg, data_cfg = create_config_dicts(args, None)
 
-    # Load transforms
+    # Prepare for loading transforms
     transforms = {
         source: {model_name: {} for model_name in model_cfg.names}
         for source in model_cfg.sources
     }
-    if args.glob:
-        args.alphas=[None]
-        args.taus=[None]
-        args.contrastive_batch_sizes=[None]
+    if args.transform_type != "glocal":
+        args.alphas = [None]
+        args.taus = [None]
+        args.contrastive_batch_sizes = [None]
     eta, lmbda, alpha, tau, contrastive_batch_size = get_combination(
-            etas=args.etas,
-            lambdas=args.lmbdas,
-            alphas=args.alphas,
-            taus=args.taus,
-            contrastive_batch_sizes=args.contrastive_batch_sizes,
+        etas=args.etas,
+        lambdas=args.lmbdas,
+        alphas=args.alphas,
+        taus=args.taus,
+        contrastive_batch_sizes=args.contrastive_batch_sizes,
     )
-    for src, model_name in zip(model_cfg.sources, model_cfg.names):
-        if args.glob:
-            path_to_transform = os.path.join(args.transforms_root, model_name, model_cfg.module_type, "3", str(lmbda), args.optim.lower(), str(eta), "transform.npz")
-            transforms[src][model_name] = GlobalTransform(
-                    source=src,
-                    model_name=model_name,
-                    module=model_cfg.module_type,
-                    path_to_transform=path_to_transform,
-                    path_to_features=args.things_embeddings_path,
-            )
-        else:
-            transforms[src][model_name] = GlocalTransform(
+
+    all_results = []
+    regressor_types = args.regressor_type
+    n_shots = args.n_shot
+    for model_id_in_cfg, (src, model_name, module) in enumerate(
+        zip(model_cfg.sources, model_cfg.names, model_cfg.modules)
+    ):
+        # Create out path and check if results already exist
+        out_path = os.path.join(
+            args.out_dir,
+            args.dataset + ("" if args.task is None else f"_{args.task}"),
+            model_cfg.sources[model_id_in_cfg],
+            model_cfg.names[model_id_in_cfg],
+            model_cfg.module_type,
+            str(eta),
+            str(lmbda),
+            str(alpha),
+            str(tau),
+            str(contrastive_batch_size),
+            str(args.sample_per_superclass),
+        )
+        if not os.path.exists(out_path):
+            print("\nOutput directory does not exist...")
+            print("Creating output directory to save results...\n")
+            os.makedirs(out_path)
+        out_file_path = os.path.join(out_path, "fewshot_results.pkl")
+
+        if os.path.isfile(out_file_path):
+            print("Results already exist. Skipping...")
+            print(f"Results file: {out_file_path}")
+            continue
+
+        # Load transforms
+        try:
+            if args.transform_type != "glocal":
+                try:
+                    if args.transform_type == "original":
+                        path_to_transform = os.path.join(
+                            args.transforms_root, "transforms_without_norm.pkl"
+                        )
+                    else:
+                        path_to_transform = os.path.join(
+                            args.transforms_root,
+                            src,
+                            model_name,
+                            model_cfg.module_type,
+                            "3",
+                            str(lmbda),
+                            args.optim.lower(),
+                            str(eta),
+                            "transform.npz",
+                        )
+                    transforms[src][model_name] = GlobalTransform(
+                        source=src,
+                        model_name=model_name,
+                        module=model_cfg.module_type,
+                        path_to_transform=path_to_transform,
+                        path_to_features=args.things_embeddings_path,
+                    )
+                except:
+                    # TODO: remove this branch; is just for backward compatibility
+                    path_to_transform = os.path.join(
+                        args.transforms_root,
+                        model_name,
+                        model_cfg.module_type,
+                        "3",
+                        str(lmbda),
+                        args.optim.lower(),
+                        str(eta),
+                        "transform.npz",
+                    )
+                    transforms[src][model_name] = GlobalTransform(
+                        source=src,
+                        model_name=model_name,
+                        module=model_cfg.module_type,
+                        path_to_transform=path_to_transform,
+                        path_to_features=args.things_embeddings_path,
+                    )
+            else:
+                transforms[src][model_name] = GlocalTransform(
                     root=args.transforms_root,
                     source=src,
                     model=model_name,
@@ -629,43 +713,55 @@ if __name__ == "__main__":
                     alpha=alpha,
                     tau=tau,
                     contrastive_batch_size=contrastive_batch_size,
-            )
+                )
+                if not "mean" in transforms[src][model_name].transform.keys():
+                    # Backward compatibility with old transforms that don't have mean and std
+                    with open(args.things_embeddings_path, "rb") as f:
+                        things_features = pickle.load(f)
+                    things_features = things_features[src][model_name][
+                        model_cfg.module_type
+                    ]
+                    transforms[src][model_name].transform = dict(
+                        transforms[src][model_name].transform
+                    )
+                    transforms[src][model_name].transform[
+                        "mean"
+                    ] = things_features.mean()
+                    transforms[src][model_name].transform["std"] = things_features.std()
+        except AssertionError as e:
+            print(e)
+            print("Skipping...")
+            continue
 
-    # Do few-shot
-    all_results = []
-    regressor_types = args.regressor_type
-    n_shots = args.n_shot
-    for model_id_in_cfg, (src, model_name, module) in enumerate(
-            zip(model_cfg.sources, model_cfg.names, model_cfg.modules)
-    ):
+        # Do few-shot
         for regressor_type in regressor_types:
             for shots in n_shots:
                 if regressor_type == "ridge" and shots == 1:
                     continue
                 args.n_shot = shots
                 args.regressor_type = regressor_type
-                model_cfg, data_cfg = create_config_dicts(
-                        args, None
-                )
+                model_cfg, data_cfg = create_config_dicts(args, None)
 
                 np.random.seed(int(1e5))
                 torch.manual_seed(int(1e5))
 
                 results = run(
-                        n_shot=args.n_shot,
-                        n_test=args.n_test,
-                        n_reps=args.n_reps,
-                        class_id_set=class_id_set,
-                        class_id_set_test=class_id_set_test,
-                        device=args.device,
-                        model_cfg=model_cfg,
-                        data_cfg=data_cfg,
-                        transforms=transforms,
-                        regressor_type=args.regressor_type,
-                        superclass_mapping=superclass_mapping,
-                        sample_per_superclass=args.sample_per_superclass,
-                        model_id_in_cfg=model_id_in_cfg,
-                        embeddings=embeddings,
+                    n_shot=args.n_shot,
+                    n_test=args.n_test,
+                    n_reps=args.n_reps,
+                    class_id_set=class_id_set,
+                    class_id_set_test=class_id_set_test,
+                    device=args.device,
+                    model_cfg=model_cfg,
+                    data_cfg=data_cfg,
+                    transforms=transforms,
+                    regressor_type=args.regressor_type,
+                    superclass_mapping=superclass_mapping,
+                    sample_per_superclass=args.sample_per_superclass,
+                    model_id_in_cfg=model_id_in_cfg,
+                    embeddings=embeddings,
+                    solver=args.solver,
+                    run_baseline=int(os.environ["SLURM_ARRAY_TASK_ID"]) == 4,
                 )
                 all_results.append(results)
         results = pd.concat(all_results)
@@ -673,24 +769,6 @@ if __name__ == "__main__":
         results["eta"] = eta
         results["optim"] = args.optim.lower()
 
-        out_path = os.path.join(
-                args.out_dir,
-                args.dataset + ("" if args.task is None else f"_{args.task}"),
-                model_cfg.sources[model_id_in_cfg],
-                model_cfg.names[model_id_in_cfg],
-                model_cfg.module_type,
-                str(eta),
-                str(lmbda),
-                str(alpha),
-                str(tau),
-                str(contrastive_batch_size),
-                str(args.sample_per_superclass),
-                )
-        if not os.path.exists(out_path):
-            print("\nOutput directory does not exist...")
-            print("Creating output directory to save results...\n")
-            os.makedirs(out_path)
-
-        results.to_pickle(os.path.join(out_path, "fewshot_results.pkl"))
+        results.to_pickle(out_file_path)
 
     print("Elapsed time (init):", datetime.now() - start_t)

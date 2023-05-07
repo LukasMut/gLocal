@@ -64,7 +64,10 @@ def get_temperature(
 def model_name_to_thingsvision(model_name: str) -> Tuple[str, Optional[Dict]]:
     """Split up a model name for thingsvision."""
     if model_name.startswith("OpenCLIP"):
-        name, variant, data = model_name.split("_")
+        split = model_name.split("_")
+        name = split[0]
+        variant = split[1]
+        data = "_".join(split[2:])
         model_params = dict(variant=variant, dataset=data)
     elif model_name.startswith("clip"):
         name, variant = model_name.split("_")
