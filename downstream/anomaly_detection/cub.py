@@ -4,26 +4,22 @@ from torchvision.datasets.folder import default_loader
 from torch.utils.data import Dataset
 import os.path as pt
 from torchvision.datasets.utils import download_and_extract_archive
+import sys
 
 
 class Cub2011(Dataset):
     base_folder = 'CUB_200_2011/images'
     url = 'https://data.caltech.edu/records/65de6-vp158/files/CUB_200_2011.tgz'
     filename = 'CUB_200_2011.tgz'
-    tgz_md5 = '97eceeb196236b17998738112f37df78'
 
     def __init__(self, root, train=True, transform=None, loader=default_loader, download=True):
-        self.root = os.path.expanduser(root)
+        self.root = root
         self.transform = transform
         self.loader = default_loader
         self.train = train
 
         if download:
             self._download()
-
-        if not self._check_integrity():
-            raise RuntimeError('Dataset not found or corrupted.' +
-                               ' You can use download=True to download it')
 
     def _load_metadata(self):
         if not pt.exists(os.path.join(self.root, self.base_folder, 'images.txt')):
@@ -79,7 +75,7 @@ class Cub2011(Dataset):
     def __getitem__(self, idx):
         sample = self.data.iloc[idx]
         path = os.path.join(self.root, self.base_folder, sample.filepath)
-        target = sample.target - 1  # Targets start at 1 by default, so shift to 0
+        target = sample.target
         img = self.loader(path)
 
         if self.transform is not None:

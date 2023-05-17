@@ -5,6 +5,7 @@ import numpy as np
 import zipfile
 import utils
 import torch
+import pickle
 
 Array = np.ndarray
 FILE_FORMATS = [".pkl", ".npz"]
@@ -24,6 +25,8 @@ class THINGSFeatureTransform(object):
         self.source = source
         self.model_name = model_name
         self.module = module
+        self.new_transform = path_to_transform.endswith('.npz')
+
         if archive_path:
             archive = zipfile.ZipFile(archive_path, 'r')
             f = archive.open(path_to_transform)
@@ -36,20 +39,18 @@ class THINGSFeatureTransform(object):
             self.things_std = self.transform["std"]
         else:
             features_things = utils.evaluation.load_features(path=things_embeddings_path)
-            self.things_mean = np.mean(
-                features_things[source][model_name][self.module],
-                # axis=0,
-            )
-            self.things_std = np.std(
-                features_things[source][model_name][self.module],
-                # axis=0,
-            )
+            self.things_mean = np.mean(features_things[source][model_name][self.module])
+            self.things_std = np.std(features_things[source][model_name][self.module])
         self.things_mean = torch.tensor(self.things_mean).to(device)
         self.things_std = torch.tensor(self.things_std).to(device)
-        self.variables = {}
-        for key in ["weights", "bias"]:
-            if key in self.transform:
-                self.variables[key] = torch.tensor(self.transform[key]).to(device)
+
+        if self.new_transform:
+            self.variables = {}
+            for key in ["weights", "bias"]:
+                if key in self.transform:
+                    self.variables[key] = torch.tensor(self.transform[key]).to(device)
+        else:
+            self.transform = torch.tensor(self.transform).to(device)
 
     def _load_transform(self, path_to_transform: str) -> None:
         assert os.path.isfile(
@@ -68,8 +69,13 @@ class THINGSFeatureTransform(object):
 
     def transform_features(self, features: Array) -> Array:
         features = (features - self.things_mean) / self.things_std
-        if "weights" in self.transform:
-            features = features @ self.variables["weights"]
-            if "bias" in self.variables:
-                features += self.variables["bias"]
+        if self.new_transform:
+            if "weights" in self.variables:
+                features = features @ self.variables["weights"]
+                if "bias" in self.variables:
+                    features += self.variables["bias"]
+            else:
+                raise ValueError()
+        else:
+            features = features @ self.transform
         return features

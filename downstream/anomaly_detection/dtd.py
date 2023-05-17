@@ -1,7 +1,5 @@
 from downstream.anomaly_detection.base import BaseADSet
 from torchvision.datasets import DTD
-import numpy as np
-from .utils import get_target_label_idx
 
 
 class ADDTD(BaseADSet):

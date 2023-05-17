@@ -10,7 +10,7 @@ from .breeds_sets import get_breeds_task
 Array = np.ndarray
 Tensor = torch.Tensor
 
-IMAGENET_ROOT = '../unsup-clever-hans/resources/imagenet'
+IMAGENET_ROOT = '../unsup-clever-hans/resources/old/resources/imagenet'
 
 
 class EmbeddedImageNet(ImageNet):

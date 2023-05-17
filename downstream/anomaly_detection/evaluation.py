@@ -135,22 +135,25 @@ class ADEvaluator:
         self.test_features = torch.tensor(self.test_features).to(torch.float32).to(self.device)
 
     def evaluate(self, normal_classes, knn_k=5, things_transform=None):
-        train_features = self.train_features
-        test_features = self.test_features
+        train_features = self.train_features.clone()
+        test_features = self.test_features.clone()
+
+        def transform_features(embeddings):
+            return things_transform.transform_features(embeddings)
 
         if things_transform is not None:
-            train_features = things_transform.transform_features(train_features)
+            train_features = transform_features(train_features)
         train_features = F.normalize(train_features, dim=-1)
 
         if things_transform is not None:
-            test_features = things_transform.transform_features(test_features)
+            test_features = transform_features(test_features)
         test_features = F.normalize(test_features, dim=-1)
 
         aucs = []
-        for normal_cls in normal_classes:
-            train_reduced = self.dataset.reduce_train(train_embeddings=train_features, cls=normal_cls)
+        for cls in normal_classes:
+            train_reduced = self.dataset.reduce_train(train_embeddings=train_features, cls=cls)
             test_reduced, test_reduced_labels = self.dataset.reduce_test(test_embeddings=test_features,
-                                                                         cls=normal_cls)
+                                                                         cls=cls)
             sim_matrix = torch.mm(test_reduced, train_reduced.t())
             sim_weight, sim_indices = sim_matrix.topk(k=knn_k, dim=-1)
             anomaly_scores = - sim_weight.mean(dim=-1).cpu().numpy()

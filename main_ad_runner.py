@@ -21,7 +21,8 @@ model_mapping = {
 
 transform_paths = {
     'global': '/home/space/datasets/things/transforms/globals',
-    'glocal': '/home/space/datasets/things/probing/results/'
+    'glocal': '/home/space/datasets/things/probing/results/',
+    'naive': '/home/space/datasets/things/transforms/naive_transforms.pkl'
 }
 
 module_mapping = {
@@ -39,8 +40,6 @@ dataset_classes = {'cifar10': 10, 'cifar100': 100,
                    'flowers': 102,
                    'dtd-rvo': 47,
                    'flowers-rvo': 102,
-                   'cub2011': 200,
-                   'cub2011-rvo': 200,
                    'imagenet30': 30,
                    'imagenet30-rvo': 30}
 
@@ -63,6 +62,7 @@ args = parser.parse_args()
 
 if args.datasets is None:
     datasets = dataset_classes.keys()
+    print(datasets)
 else:
     datasets = args.datasets
 
@@ -93,19 +93,22 @@ for model in tqdm(models):
             # imagenet pretrained doesn't make sense here
             continue
 
-        # get all transform paths
-        transform_path = join(transform_paths[args.type], source, model)
-        transforms = []
-        for root, dirs, files in os.walk(transform_path):
-            for filename in files:
-                filename = os.path.join(root, filename)
-                if not filename.endswith('.npz'):
-                    continue
-                if args.type == 'glocal':
-                    data = np.load(filename)
-                    if np.sum(np.isnan(data['weights'])) > 0:
+        if args.type == 'naive':
+            transforms = [transform_paths[args.type]]
+        else:
+            # get all transform paths
+            transform_path = join(transform_paths[args.type], source, model)
+            transforms = []
+            for root, dirs, files in os.walk(transform_path):
+                for filename in files:
+                    filename = os.path.join(root, filename)
+                    if not filename.endswith('.npz'):
                         continue
-                transforms.append(filename)
+                    if args.type == 'glocal':
+                        data = np.load(filename)
+                        if np.sum(np.isnan(data['weights'])) > 0:
+                            continue
+                    transforms.append(filename)
 
         # run eval
         ad_results = main(dataset=dataset, data_root=args.data_root,

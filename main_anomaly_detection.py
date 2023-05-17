@@ -40,7 +40,8 @@ def main(dataset, data_root, source, model_name, module, path_to_transforms,
                                                   path_to_transform=path_to_transform,
                                                   device=device)
         results = evaluator.evaluate(things_transform=things_transform,
-                                     normal_classes=list(range(num_classes)))
+                                     normal_classes=list(range(num_classes)),
+                                     knn_k=knn_k)
         output["results"].append({
             "path_to_transform": path_to_transform,
             "results": results
