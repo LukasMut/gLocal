@@ -3,12 +3,12 @@ seaborn==0.11.*
 numpy>=1.22.*
 Pillow==9.1.*
 pandas>=1.3.*
-thingsvision==2.3.13
-torchvision==0.14.*
+thingsvision==2.3.14
+torchvision==0.14.1
 torch>=1.13.*
+pytorch_lightning==1.9.*
 functorch
 tqdm
-pytorch_lightning
 einops
 tueplots
 ml_collections
