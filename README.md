@@ -7,8 +7,7 @@
     </a>
 </div>
 
-# When are human-aligned representations useful for ML downstream tasks?
-## On the human-machine representation space trade-off
+# Improving neural network representations using human similarity judgments
 
 ## Environment setup and dependencies
 
