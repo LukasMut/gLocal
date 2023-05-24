@@ -59,6 +59,12 @@ class GlobalTransform:
             features = features @ self.transform["weights"]
             if "bias" in self.transform:
                 features += self.transform["bias"]
+        elif self.transform.shape[0] != self.transform.shape[1]:
+            weights = self.transform[:,:-1]
+            bias = self.transform[:,-1]
+            features = features @ weights + bias
+        else:
+            features = features @ self.transform
         return features
 
 
