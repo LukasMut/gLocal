@@ -126,6 +126,17 @@ python main_retrieval_eval.py --out retrieval_results.csv \
 `--transform_path` can be used to change the path from which the transformation matrices are loaded.
 
 
+### Anomaly Detection
+We evaluate nearest neighbor based anomaly detection on various datasets. The following script can be used to evaluate all models with all transforms on all datasets:
+
+```bash
+python main_ad_runner.py
+```
+
+For individual runs on one model/dataset with more control, the `main_anomaly_detection.py` script can be used:
+
+
+
 
 
 
