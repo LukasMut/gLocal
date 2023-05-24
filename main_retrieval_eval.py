@@ -1,7 +1,6 @@
 import argparse
 import os
 import warnings
-from xml.parsers.expat import model
 
 import numpy as np
 import pandas as pd
@@ -17,14 +16,12 @@ def evaluate_normal_vs_transformed(
     embeddings_dir: str,
     data_root: str,
     transform_path: str,
-    device: str,
     update_transforms: bool = False,
     concat_weight=None,
 ):
     all_results = []
-    # models = ['RN50']
-    models = ["ViT-L-14"]
-    for model_name in tqdm(models, desc="CLIP model"):
+
+    for model_name in tqdm(CLIP_MODELS, desc="CLIP model"):
         try:
             embeddings = np.load(os.path.join(embeddings_dir, f"{model_name}.npz"))
         except FileNotFoundError:
@@ -44,10 +41,10 @@ def evaluate_normal_vs_transformed(
                 module="penultimate",
                 path_to_transform=transform_path,
             )
-            image_transformed = torch.from_numpy(
+            image_transformed = torch.tensor(
                 things_feature_transform.transform_features(img_embedding)
             )
-            text_transformed = torch.from_numpy(
+            text_transformed = torch.tensor(
                 things_feature_transform.transform_features(text_embedding)
             )
             np.savez(
@@ -64,7 +61,7 @@ def evaluate_normal_vs_transformed(
         # Evaluate without transforms
         img_embedding = torch.from_numpy(img_embedding)
         text_embedding = torch.from_numpy(text_embedding)
-        results = evaluate(img_embedding, text_embedding, dataset_root=data_root, device=device)
+        results = evaluate(img_embedding, text_embedding, dataset_root=data_root)
         results["model"] = model_name
         results["transform"] = False
         all_results.append(results)
@@ -73,19 +70,19 @@ def evaluate_normal_vs_transformed(
             print("\nUsing weighted concat with", concat_weight)
             print(f"Shape: {image_transformed.shape}\n")
             image_transformed = torch.cat(
-                (img_embedding * (1 - concat_weight),
-                image_transformed * concat_weight),
+                img_embedding * (1 - concat_weight),
+                image_transformed * concat_weight,
                 dim=1,
             )
             text_transformed = torch.cat(
-                (text_embedding * (1 - concat_weight),
-                text_transformed * concat_weight),
+                text_embedding * (1 - concat_weight),
+                text_transformed * concat_weight,
                 dim=1,
             )
 
         # Evaluate with transforms
         results_t = evaluate(
-            image_transformed, text_transformed, dataset_root=data_root, device=device,
+            image_transformed, text_transformed, dataset_root=data_root
         )
         results_t["model"] = model_name
         results_t["transform"] = True
@@ -108,9 +105,6 @@ if __name__ == "__main__":
         "--transform_path",
         default="/home/space/datasets/things/transforms/transforms_without_norm.pkl",
     )
-    parser.add_argument(
-        "--device", type=str, default="cuda", choices=["cpu", "cuda"]
-    )
     parser.add_argument("--out")
     args = parser.parse_args()
 
@@ -119,7 +113,6 @@ if __name__ == "__main__":
         update_transforms=args.update_transforms,
         concat_weight=args.concat_weight,
         data_root=args.data_root,
-        device=args.device,
         transform_path=args.transform_path,
     )
     results_df.to_csv(args.out, index=False)

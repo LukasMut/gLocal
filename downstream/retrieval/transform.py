@@ -36,20 +36,10 @@ class THINGSFeatureTransform(object):
             )
 
     def transform_features(self, features: Array) -> Array:
-        try:
-            things_mean = self.transform["mean"]
-            things_std = self.transform["std"]
-        except:
-            with open("../human_alignment/datasets/things/probing/embeddings/features.pkl", "rb") as f:
-                things_features = pickle.load(f)
-                things_features_current_model = things_features[self.source][self.model_name][self.module]
-                things_mean = things_features_current_model.mean()
-                things_std = things_features_current_model.std()
+        things_mean = self.transform["mean"]
+        things_std = self.transform["std"]
         features = (features - things_mean) / things_std
         if "weights" in self.transform:
-            print(features.shape)
-            print(self.transform["weights"].shape)
-            print()
             features = features @ self.transform["weights"]
             if "bias" in self.transform:
                 features += self.transform["bias"]
