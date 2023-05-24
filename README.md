@@ -133,7 +133,7 @@ We evaluate nearest neighbor based anomaly detection on various datasets. The fo
 python main_ad_runner.py
 ```
 
-For individual runs on one model/dataset with more control, the `main_anomaly_detection.py` script can be used:
+For individual runs on one model/dataset with more control, the `main_anomaly_detection.py` script can be used.
 
 
 
