@@ -75,7 +75,12 @@ class THINGSFeatureTransform(object):
                 if "bias" in self.variables:
                     features += self.variables["bias"]
             else:
-                raise ValueError()
+                raise KeyError('\nWeights not found in transform.\n')
         else:
-            features = features @ self.transform
+            if (self.transform.shape[0] != self.transform.shape[1]):
+                weights = self.transform[:,:-1]
+                bias = self.transform[:,-1]
+                features = features @ weights + bias
+            else:
+                features = features @ self.transform
         return features
