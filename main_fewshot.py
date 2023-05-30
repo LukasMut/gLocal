@@ -659,9 +659,9 @@ if __name__ == "__main__":
         try:
             if args.transform_type != "glocal":
                 try:
-                    if args.transform_type == "original":
+                    if args.transform_type == "old":
                         path_to_transform = os.path.join(
-                            args.transforms_root, "transforms_without_norm.pkl"
+                            args.transforms_root, "naive_transforms.pkl"
                         )
                     else:
                         path_to_transform = os.path.join(
@@ -761,7 +761,7 @@ if __name__ == "__main__":
                     model_id_in_cfg=model_id_in_cfg,
                     embeddings=embeddings,
                     solver=args.solver,
-                    run_baseline=int(os.environ["SLURM_ARRAY_TASK_ID"]) == 4,
+                    run_baseline=args.transform_type == "old"
                 )
                 all_results.append(results)
         results = pd.concat(all_results)
