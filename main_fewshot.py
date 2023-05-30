@@ -3,7 +3,7 @@ import itertools
 import os
 import pickle
 from datetime import datetime
-from typing import Any, List, Tuple, Optional, Dict, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -15,12 +15,11 @@ import utils
 from downstream.fewshot.breeds_sets import get_breeds_task
 from downstream.fewshot.cifar import get_cifar100_coarse_map
 from downstream.fewshot.data import load_dataset
-from downstream.fewshot.predictors import test_regression, get_regressor
-from downstream.fewshot.utils import is_embedding_source
-from main_model_sim_eval import get_module_names
+from downstream.fewshot.predictors import get_regressor, test_regression
 from main_glocal_probing_efficient import get_combination
-from utils.probing.helpers import model_name_to_thingsvision
+from main_model_sim_eval import get_module_names
 from utils.evaluation.transforms import GlobalTransform, GlocalTransform
+from utils.probing.helpers import model_name_to_thingsvision
 
 Array = np.ndarray
 Tensor = torch.Tensor
@@ -211,6 +210,10 @@ def parseargs():
     return args
 
 
+def is_embedding_source(source: str) -> bool:
+    return source not in ["torchvision", "custom"]
+
+
 def get_subset_indices(dataset, cls_id: Union[int, List[int]]):
     if type(cls_id) == int:
         cls_id = [cls_id]
@@ -244,7 +247,10 @@ def get_features_targets(
     sample_per_superclass: bool = False,
 ):
     ids_subset = class_ids if ids_subset is None else ids_subset
-    dataset_is_embedded = is_embedding_source(source) or embeddings is not None
+    dataset_is_embedded = (
+        is_embedding_source(source) not in ["torchvision", "custom"]
+        or embeddings is not None
+    )
 
     if dataset_is_embedded:
         # Load the dataset from an embedding source
@@ -469,7 +475,7 @@ def run(
 
     # Train regression w and w/o transform
     regressors = {to: [] for to in transform_options}
-    for (train_features_original, train_targets) in zip(
+    for train_features_original, train_targets in zip(
         train_features_original_all, train_targets_all
     ):
         # This loops over the repetitions

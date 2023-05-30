@@ -7,8 +7,7 @@
     </a>
 </div>
 
-# When are human-aligned representations useful for ML downstream tasks?
-## On the human-machine representation space trade-off
+# Improving neural network representations using human similarity judgments
 
 ## Environment setup and dependencies
 
@@ -124,6 +123,17 @@ python main_retrieval_eval.py --out retrieval_results.csv \
 ```
 `--concat_weight` can be used to concat the transformed and normal embeddings and weigh the transformed ones.
 `--transform_path` can be used to change the path from which the transformation matrices are loaded.
+
+
+### Anomaly Detection
+We evaluate nearest neighbor based anomaly detection on various datasets. The following script can be used to evaluate all models with all transforms on all datasets:
+
+```bash
+python main_ad_runner.py
+```
+
+For individual runs on one model/dataset with more control, the `main_anomaly_detection.py` script can be used.
+
 
 
 
