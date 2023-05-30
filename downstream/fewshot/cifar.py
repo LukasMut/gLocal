@@ -106,4 +106,5 @@ def get_cifar100_coarse_map():
                 13,
             ]
         )
-    return coarse_labels
+    superclass_mapping = {i:v for i,v in enumerate(coarse_labels)}
+    return superclass_mapping
