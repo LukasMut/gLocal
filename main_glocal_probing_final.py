@@ -1,5 +1,4 @@
 import argparse
-import itertools
 import os
 import pickle
 from collections import defaultdict
@@ -9,11 +8,8 @@ import numpy as np
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import (
-    EarlyStopping,
-    LearningRateMonitor,
-    ModelCheckpoint,
-)
+from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
+                                         ModelCheckpoint)
 from torch.utils.data import DataLoader
 
 import utils
@@ -63,41 +59,38 @@ def parseargs():
     )
     aa("--optim", type=str, default="Adam", choices=["Adam", "AdamW", "SGD"])
     aa(
-        "--learning_rates",
+        "--eta",
         type=float,
         default=1e-3,
-        nargs="+",
         metavar="eta",
+        help="learning rate",
         choices=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
     )
     aa(
         "--regularization",
         type=str,
-        default="l2",
+        default="eye",
         choices=["l2", "eye"],
-        help="What kind of regularization to be applied",
+        help="type of regularization to apply to the linear transform",
     )
     aa(
-        "--lmbdas",
+        "--lmbda",
         type=float,
-        default=1e-3,
-        nargs="+",
-        help="Relative contribution of the l2 or identity regularization penality",
+        default=1e-1,
+        help="relative contribution of the l2 or scaled identity regularization penality",
         choices=[10.0, 1.0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
     )
     aa(
-        "--alphas",
+        "--alpha",
         type=float,
         default=1e-1,
-        nargs="+",
-        help="Relative contribution of the contrastive loss term",
+        help="relative contribution of the contrastive loss term",
     )
     aa(
-        "--taus",
+        "--tau",
         type=float,
-        default=1,
-        nargs="+",
-        help="temperature value for contrastive learning objective",
+        default=1.0,
+        help="temperature value for the contrastive learning objective",
         choices=[1.0, 5e-1, 25e-2, 1e-1, 5e-2, 25e-3, 1e-2],
     )
     aa(
@@ -116,10 +109,9 @@ def parseargs():
         choices=[64, 128, 256, 512, 1024],
     )
     aa(
-        "--contrastive_batch_sizes",
+        "--contrastive_batch_size",
         type=int,
         default=1024,
-        nargs="+",
         metavar="B_C",
         help="Use 64 <= B <= 4096 and power of two for running optimization process on GPU",
         choices=[64, 128, 256, 512, 1024, 2048, 4096],
@@ -170,37 +162,16 @@ def parseargs():
     return args
 
 
-def get_combination(
-    etas: List[float],
-    lambdas: List[float],
-    alphas: List[float],
-    taus: List[float],
-    contrastive_batch_sizes: List[int],
-) -> List[Tuple[float, float, float, float, int]]:
-    combs = []
-    combs.extend(
-        list(itertools.product(etas, lambdas, alphas, taus, contrastive_batch_sizes))
-    )
-    return combs[int(os.environ["SLURM_ARRAY_TASK_ID"])]
-
-
-def create_optimization_config(
-    args,
-    eta: float,
-    lmbda: float,
-    alpha: float,
-    tau: float,
-    contrastive_batch_size: int,
-) -> Dict[str, Any]:
+def create_optimization_config(args) -> Dict[str, Any]:
     """Create frozen config dict for optimization hyperparameters."""
     optim_cfg = dict()
     optim_cfg["optim"] = args.optim
     optim_cfg["reg"] = args.regularization
-    optim_cfg["lr"] = eta
-    optim_cfg["lmbda"] = lmbda
-    optim_cfg["alpha"] = alpha
-    optim_cfg["tau"] = tau
-    optim_cfg["contrastive_batch_size"] = contrastive_batch_size
+    optim_cfg["lr"] = args.eta
+    optim_cfg["lmbda"] = args.lmbda
+    optim_cfg["alpha"] = args.alpha
+    optim_cfg["tau"] = args.tau
+    optim_cfg["contrastive_batch_size"] = args.contrastive_batch_size
     optim_cfg["triplet_batch_size"] = args.triplet_batch_size
     optim_cfg["max_epochs"] = args.epochs
     optim_cfg["min_epochs"] = args.burnin
@@ -372,24 +343,14 @@ def save_results(
 
 def get_imagenet_features(root: str, format: str, device: str) -> Tuple[Any, Any]:
     if format == "hdf5":
-        imagenet_train_features = utils.probing.FeaturesHDF5(
-            root=root,
-            split="train",
-        )
-        imagenet_val_features = utils.probing.FeaturesHDF5(
-            root=root,
-            split="val",
-        )
+        imagenet_train_features = utils.probing.FeaturesHDF5(root=root, split="train",)
+        imagenet_val_features = utils.probing.FeaturesHDF5(root=root, split="val",)
     elif format == "pt":
         imagenet_train_features = utils.probing.FeaturesPT(
-            root=root,
-            split="train",
-            device=device,
+            root=root, split="train", device=device,
         )
         imagenet_val_features = utils.probing.FeaturesPT(
-            root=root,
-            split="val",
-            device=device,
+            root=root, split="val", device=device,
         )
     else:
         raise ValueError(
@@ -427,12 +388,10 @@ def run(
     results = defaultdict(list)
     # convert train and validation triplets into PyTorch datasets
     train_triplets = utils.probing.TripletData(
-        triplets=train_triplets,
-        n_objects=n_objects,
+        triplets=train_triplets, n_objects=n_objects,
     )
     val_triplets = utils.probing.TripletData(
-        triplets=val_triplets,
-        n_objects=n_objects,
+        triplets=val_triplets, n_objects=n_objects,
     )
     train_batches_things = get_batches(
         dataset=train_triplets,
@@ -469,8 +428,7 @@ def run(
         num_workers=num_processes,
     )
     glocal_probe = utils.probing.GlocalFeatureProbe(
-        features=features,
-        optim_cfg=optim_cfg,
+        features=features, optim_cfg=optim_cfg,
     )
     trainer = Trainer(
         accelerator=device,
@@ -485,10 +443,7 @@ def run(
         gradient_clip_algorithm="norm",
     )
     trainer.fit(glocal_probe, train_batches, val_batches)
-    test_performances = trainer.test(
-        glocal_probe,
-        dataloaders=val_batches,
-    )
+    test_performances = trainer.test(glocal_probe, dataloaders=val_batches,)
     predictions = trainer.predict(glocal_probe, dataloaders=val_batches_things)
     for metric, performance in test_performances[0].items():
         results[metric].append(performance)
@@ -508,14 +463,6 @@ if __name__ == "__main__":
     features = load_features(args.probing_root)
     model_features = features[args.source][args.model][args.module]
 
-    eta, lmbda, alpha, tau, contrastive_batch_size = get_combination(
-        etas=args.learning_rates,
-        lambdas=args.lmbdas,
-        alphas=args.alphas,
-        taus=args.taus,
-        contrastive_batch_sizes=args.contrastive_batch_sizes,
-    )
-
     out_path = os.path.join(
         args.probing_root,
         "results",
@@ -524,11 +471,11 @@ if __name__ == "__main__":
         args.model,
         args.module,
         args.optim.lower(),
-        str(eta),
-        str(lmbda),
-        str(alpha),
-        str(tau),
-        str(contrastive_batch_size),
+        str(args.eta),
+        str(args.lmbda),
+        str(args.alpha),
+        str(args.tau),
+        str(args.contrastive_batch_size),
     )
     if not os.path.exists(out_path):
         os.makedirs(out_path, exist_ok=True)
@@ -539,14 +486,7 @@ if __name__ == "__main__":
         print("\nResults already exist. Skipping...")
         print(f"Results file: {out_file_path}\n")
     else:
-        optim_cfg = create_optimization_config(
-            args=args,
-            eta=eta,
-            lmbda=lmbda,
-            alpha=alpha,
-            tau=tau,
-            contrastive_batch_size=contrastive_batch_size,
-        )
+        optim_cfg = create_optimization_config(args)
 
         ooo_choices, results, transform, things_mean, things_std = run(
             features=model_features,
