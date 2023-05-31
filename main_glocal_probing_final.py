@@ -495,7 +495,6 @@ if __name__ == "__main__":
             optim_cfg=optim_cfg,
             n_objects=args.n_objects,
             device=args.device,
-            rnd_seed=args.rnd_seed,
             num_processes=args.num_processes,
             features_format=args.features_format,
         )
