@@ -2,6 +2,7 @@ import argparse
 import os
 from typing import Any, Dict, List
 
+import re
 import torch
 from thingsvision import get_extractor
 from thingsvision.utils.data import ImageDataset
@@ -169,9 +170,9 @@ def extract(
             pin_memory=True,
         )
         if (
-            model_cfg["source"] == "torchvision"
+            (model_cfg["source"] == "torchvision" or model_cfg["source"] == "ssl")
             and model_cfg["module"] == "penultimate"
-            and model_cfg["model"].startswith("vit")
+            and re.search(r"vit", model_cfg["model"])
         ):
             features = extractor.extract_features(
                 batches=batches,
