@@ -1,8 +1,8 @@
 import argparse
 import os
+import re
 from typing import Any, Dict, List
 
-import re
 import torch
 from thingsvision import get_extractor
 from thingsvision.utils.data import ImageDataset
@@ -180,7 +180,7 @@ def extract(
                 flatten_acts=False,
                 output_type="tensor",
             )
-            features = features[:, 0].copy()
+            features = features[:, 0, :].copy()
         else:
             features = extractor.extract_features(
                 batches=batches,
