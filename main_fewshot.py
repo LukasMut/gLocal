@@ -182,7 +182,7 @@ def parseargs():
         "--transform_type",
         type=str,
         default="glocal",
-        choices=["glocal", "global", "old"],
+        choices=["glocal", "global", "old", "oldbias"],
     )
     # Misc arguments
     aa("--device", type=str, default="cpu", choices=["cpu", "gpu"])
@@ -203,6 +203,11 @@ def parseargs():
         type=str,
         default=None,
         help="path/to/embeddings of the dataset",
+    )
+    aa(
+        "--full_data",
+        action="store_true",
+        help="Whether to use the transformed trained on the full data.",
     )
     aa("--out_dir", type=str, help="directory to save the results to")
     aa("--rnd_seed", type=int, default=42, help="random seed for reproducibility")
@@ -450,6 +455,7 @@ def run(
         embeddings = embeddings[model_name]
 
     # Extract train features
+    start_t_train_data = datetime.now()
     train_features_original_all, train_targets_all = get_features_targets(
         class_id_set,
         name,
@@ -466,6 +472,10 @@ def run(
         superclass_mapping=superclass_mapping,
         sample_per_superclass=sample_per_superclass,
         embeddings=embeddings,
+    )
+    end_t_train_data = datetime.now()
+    print(
+        "Time to load train data: ", (end_t_train_data - start_t_train_data)
     )
 
     try:
@@ -497,6 +507,7 @@ def run(
     for i_rep in range(n_reps):
         accuracies = {a: None for a in transform_options}
         if i_rep == 0 or data_cfg.resample_testset:
+            start_t_train_data = datetime.now()
             test_features_original, test_targets = get_features_targets(
                 class_id_set_test,
                 name,
@@ -514,6 +525,10 @@ def run(
             )
             test_features_original = test_features_original[0]
             test_targets = test_targets[0]
+            end_t_train_data = datetime.now()
+            print(
+                    "Time to load test data: ", (end_t_train_data - start_t_train_data)
+            )
 
         for use_transforms in transform_options:
             if use_transforms:
@@ -661,6 +676,36 @@ if __name__ == "__main__":
             print(f"Results file: {out_file_path}")
             continue
 
+        print("Transform root: ", args.transforms_root)
+        if args.transform_type == "glocal":
+            try:
+                optimal = pd.read_pickle(
+                    os.path.join(args.transforms_root, "optimally_aligned_probes.pkl")
+                )
+                is_opt = (
+                    len(
+                        optimal[
+                            (optimal["model"] == model_name)
+                            & (optimal["lr"] == eta)
+                            & (optimal["lmbda"] == lmbda)
+                            & (optimal["alpha"] == alpha)
+                            & (optimal["tau"] == tau)
+                            & (
+                                optimal["contrastive_batch_size"]
+                                == contrastive_batch_size
+                            )
+                        ]
+                    )
+                    > 0
+                )
+                if is_opt == 0:
+                    print("Transforms not optimal. Skipping...")
+                    continue
+            except FileNotFoundError:
+                print(
+                    "Could not load optimal transforms. Continuing without checking for optimality."
+                )
+
         # Load transforms
         try:
             if args.transform_type != "glocal":
@@ -668,6 +713,13 @@ if __name__ == "__main__":
                     if args.transform_type == "old":
                         path_to_transform = os.path.join(
                             args.transforms_root, "naive_transforms.pkl"
+                        )
+                    elif args.transform_type == "oldbias":
+                        path_to_transform = os.path.join(
+                            args.transforms_root,
+                            "naive_transforms_full_data.pkl"
+                            if args.full_data
+                            else "naive_transforms_plus_bias.pkl",
                         )
                     else:
                         path_to_transform = os.path.join(
@@ -681,6 +733,7 @@ if __name__ == "__main__":
                             str(eta),
                             "transform.npz",
                         )
+
                     transforms[src][model_name] = GlobalTransform(
                         source=src,
                         model_name=model_name,
@@ -709,7 +762,7 @@ if __name__ == "__main__":
                     )
             else:
                 transforms[src][model_name] = GlocalTransform(
-                    root=args.transforms_root,
+                    root=os.path.join(args.transforms_root, "full") if args.full_data else args.transforms_root,
                     source=src,
                     model=model_name,
                     module=model_cfg.module_type,
@@ -767,7 +820,7 @@ if __name__ == "__main__":
                     model_id_in_cfg=model_id_in_cfg,
                     embeddings=embeddings,
                     solver=args.solver,
-                    run_baseline=args.transform_type == "old"
+                    run_baseline=args.transform_type == "oldbias",
                 )
                 all_results.append(results)
         results = pd.concat(all_results)
