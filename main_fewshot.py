@@ -456,7 +456,7 @@ def run(
 
     # Extract train features
     start_t_train_data = datetime.now()
-    train_features_original_all, train_targets_all = get_features_targets(
+    train_features_all, train_targets_all = get_features_targets(
         class_id_set,
         name,
         model_params,
@@ -485,18 +485,15 @@ def run(
 
     # Train regression w and w/o transform
     regressors = {to: [] for to in transform_options}
-    for train_features_original, train_targets in zip(
-        train_features_original_all, train_targets_all
+    for train_features, train_targets in zip(
+        train_features_all, train_targets_all
     ):
         # This loops over the repetitions
         for use_transforms in transform_options:
             if use_transforms:
                 train_features = transforms[source][model_name].transform_features(
-                    train_features_original
+                    train_features
                 )
-            else:
-                train_features = train_features_original - things_mean
-
             regressor = get_regressor(
                 train_features, train_targets, regressor_type, n_shot, solver=solver
             )
@@ -508,7 +505,7 @@ def run(
         accuracies = {a: None for a in transform_options}
         if i_rep == 0 or data_cfg.resample_testset:
             start_t_train_data = datetime.now()
-            test_features_original, test_targets = get_features_targets(
+            test_features, test_targets = get_features_targets(
                 class_id_set_test,
                 name,
                 model_params,
@@ -523,7 +520,7 @@ def run(
                 # sample_per_superclass=sample_per_superclass,
                 embeddings=embeddings,
             )
-            test_features_original = test_features_original[0]
+            test_features = test_features[0]
             test_targets = test_targets[0]
             end_t_train_data = datetime.now()
             print(
@@ -533,11 +530,8 @@ def run(
         for use_transforms in transform_options:
             if use_transforms:
                 test_features = transforms[source][model_name].transform_features(
-                    test_features_original
+                    test_features
                 )
-            else:
-                test_features = test_features_original - things_mean
-
             acc, pred = test_regression(
                 regressors[use_transforms][i_rep],
                 test_targets,
@@ -569,9 +563,9 @@ def run(
                 "tau",
                 "contrastive_batch_size",
             ]:
-                try:
+                if hasattr(transforms[source][model_name], att):
                     summary[att] = transforms[source][model_name].__getattribute__(att)
-                except:
+                else:
                     summary[att] = None
 
             results.append(summary)
