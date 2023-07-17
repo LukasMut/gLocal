@@ -78,7 +78,7 @@ def regress(
 ):
     if regressor == "ridge":
         reg = train_regression(train_targets, train_features, k, solver=solver)
-    if regressor == "knn":
+    elif regressor == "knn":
         reg = train_knn(train_targets, train_features)
     else:
         raise ValueError(f"Unknown regressor: {regressor}")
