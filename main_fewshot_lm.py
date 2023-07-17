@@ -182,7 +182,7 @@ def parseargs():
         "--transform_type",
         type=str,
         default="glocal",
-        choices=["glocal", "global", "old", "oldbias"],
+        choices=["glocal", "global", "naive", "naive_bias", "without"],
     )
     # Misc arguments
     aa("--device", type=str, default="cpu", choices=["cpu", "gpu"])
@@ -320,15 +320,13 @@ def get_features_targets(
     features_all = []
     Y_all = []
     for i_batch in range(n_batches):
-        X = None
-        Y = None
         indices = []
-        for i_cls_id, cls_id in enumerate(class_ids):
+        for cls_id in class_ids:
             if type(cls_id) == int and cls_id not in ids_subset:
                 continue
             subset_indices = get_subset_indices(dataset, cls_id)
-            indices += list(
-                np.random.choice(subset_indices, size=batch_size, replace=False)
+            indices.extend(
+                list(np.random.choice(subset_indices, size=batch_size, replace=False))
             )
 
         subset = torch.utils.data.Subset(
@@ -342,42 +340,22 @@ def get_features_targets(
             num_workers=4,
             worker_init_fn=lambda id: np.random.seed(id + i_batch * 4),
         )
-
-        for x, y in batches:
-            X = [x.to(device)]
-            if len(y.shape) > 1 and y.shape[1] > 1:
-                y = torch.argmax(y, dim=1)
-            if superclass_mapping is not None:
-                y = [superclass_mapping[int(y_elem)] for y_elem in y]
-            Y = np.array(y)
-            break
+        X, Y = next(batches)
+        X = X.to(device)
+        if len(Y.shape) > 1 and Y.shape[1] > 1:
+            Y = torch.argmax(Y, dim=1)
+        if superclass_mapping is not None:
+            Y = [superclass_mapping[int(y_elem)] for y_elem in Y]
+        Y = np.array(Y)
 
         if dataset_is_embedded:
-            features = (
-                torch.stack(list(itertools.chain.from_iterable(X)), dim=0)
-                .detach()
-                .cpu()
-                .numpy()
-            )
-        elif (
-            source == "torchvision"
-            and module in ["penultimate", "encoder.ln"]
-            and model_name.startswith("vit")
-        ):
-            features = extractor.extract_features(
-                batches=X,
-                module_name=module,
-                flatten_acts=False,
-            )
-            features = features[:, 0].clone()  # select classifier token
-            features = features.reshape((features.shape[0], -1))
+            features = X.detach().cpu().numpy()
         else:
             features = extractor.extract_features(
                 batches=X,
                 module_name=module,
                 flatten_acts=True,
             )
-
         features_all.append(features)
         Y_all.append(Y)
 
@@ -433,10 +411,8 @@ def run(
     model_id_in_cfg: int = 0,
     embeddings: Optional[Dict] = None,
     solver: str = "lbfgs",
-    run_baseline: bool = True,
-):
-    transform_options = [False, True] if run_baseline else [True]
-
+    transform: bool = True,
+) -> pd.DataFrame:
     if class_id_set_test is None:
         class_id_set_test = class_id_set
         print("Using training classes for testing")
@@ -457,14 +433,14 @@ def run(
     # Extract train features
     start_t_train_data = datetime.now()
     train_features_all, train_targets_all = get_features_targets(
-        class_id_set,
-        name,
-        model_params,
-        source,
-        module,
-        module_type,
-        data_cfg,
-        n_shot,
+        class_ids=class_id_set,
+        model_name=name,
+        model_params=model_params,
+        source=source,
+        module=module,
+        module_type=module_type,
+        data_cfg=data_cfg,
+        batch_size=n_shot,
         train=True,
         n_batches=n_reps,
         shuffle=True,
@@ -476,41 +452,40 @@ def run(
     end_t_train_data = datetime.now()
     print("Time to load train data: ", (end_t_train_data - start_t_train_data))
 
-    # Train regression w and w/o transform
-    regressors = {to: [] for to in transform_options}
+    # Fit multinomial logitstic regression
+    regressors = []
     for train_features, train_targets in zip(train_features_all, train_targets_all):
         # This loops over the repetitions
-        for use_transforms in transform_options:
-            if use_transforms:
-                train_features = transforms[source][model_name].transform_features(
-                    train_features
-                )
-            regressor = get_regressor(
-                train_features, train_targets, regressor_type, n_shot, solver=solver
+        if transform:
+            train_features = transforms[source][model_name].transform_features(
+                train_features
             )
-            regressors[use_transforms].append(regressor)
+        regressor = get_regressor(
+            train_features=train_features,
+            train_targets=train_targets,
+            regressor_type=regressor_type,
+            k=n_shot,
+            solver=solver,
+        )
+        regressors.append(regressor)
 
-    
-
-    # Extract and evaluate features w and w/o transform. Due to memory constraints, for each class individually.
+    # Extract and evaluate features for each class individually.
     results = []
     for i_rep in range(n_reps):
-        accuracies = {a: None for a in transform_options}
         if i_rep == 0 or data_cfg.resample_testset:
             start_t_train_data = datetime.now()
             test_features, test_targets = get_features_targets(
-                class_id_set_test,
-                name,
-                model_params,
-                source,
-                module,
-                module_type,
-                data_cfg,
-                n_test,
+                class_ids=class_id_set_test,
+                model_name=name,
+                model_params=model_params,
+                source=source,
+                module=module,
+                module_type=module_type,
+                data_cfg=data_cfg,
+                batch_size=n_test,
                 train=False,
                 device=device,
                 superclass_mapping=superclass_mapping,
-                # sample_per_superclass=sample_per_superclass,
                 embeddings=embeddings,
             )
             test_features = test_features[0]
@@ -518,55 +493,49 @@ def run(
             end_t_train_data = datetime.now()
             print("Time to load test data: ", (end_t_train_data - start_t_train_data))
 
-        for use_transforms in transform_options:
-            if use_transforms:
-                test_features = transforms[source][model_name].transform_features(
-                    test_features
-                )
-            acc, pred = test_regression(
-                regressors[use_transforms][i_rep],
-                test_targets,
-                test_features,
+        if transform:
+            test_features = transforms[source][model_name].transform_features(
+                test_features
             )
-            accuracies[use_transforms] = acc
-
-        # Store results for all classes
-        for use_transforms in transform_options:
-            summary = {
-                "accuracy": accuracies[use_transforms],
-                "model": model_name,
-                "module": model_cfg.module_type,
-                "source": source,
-                "family": family_name,
-                "dataset": data_cfg.name,
-                "transform": use_transforms,
-                "classes": list(set(class_id_set).union(set(class_id_set_test))),
-                "n_train": n_shot,
-                "repetition": i_rep,
-                "regressor": regressor_type,
-                "samples_per_superclass": sample_per_superclass,
+        acc, _ = test_regression(
+            regressors[i_rep],
+            test_targets,
+            test_features,
+        )
+        # save results for all classes
+        summary = {
+            "accuracy": acc,
+            "model": model_name,
+            "module": model_cfg.module_type,
+            "source": source,
+            "family": family_name,
+            "dataset": data_cfg.name,
+            "transform": transform,
+            "classes": list(set(class_id_set).union(set(class_id_set_test))),
+            "n_train": n_shot,
+            "repetition": i_rep,
+            "regressor": regressor_type,
+            "samples_per_superclass": sample_per_superclass,
+        }
+        summary.update(
+            {
+                att: getattribute(transforms[source][model_name], att)
+                for att in [
+                    "optim",
+                    "eta",
+                    "lmbda",
+                    "alpha",
+                    "tau",
+                    "contrastive_batch_size",
+                ]
             }
-            summary.update(
-                {
-                    att: getattribute(transforms[source][model_name], att)
-                    for att in [
-                        "optim",
-                        "eta",
-                        "lmbda",
-                        "alpha",
-                        "tau",
-                        "contrastive_batch_size",
-                    ]
-                }
-            )
-            results.append(summary)
-    print(summary)  # prints last summary - TODO: remove
-
+        )
+        results.append(summary)
     results = pd.DataFrame(results)
     return results
 
 
-def getattribute(object: object, att: str):
+def getattribute(object: object, att: str) -> Union[bool, float, int, str]:
     if hasattr(object, att):
         return getattr(object, att)
     return None
@@ -701,11 +670,11 @@ if __name__ == "__main__":
         try:
             if args.transform_type != "glocal":
                 try:
-                    if args.transform_type == "old":
+                    if args.transform_type == "naive":
                         path_to_transform = os.path.join(
                             args.transforms_root, "naive_transforms.pkl"
                         )
-                    elif args.transform_type == "oldbias":
+                    elif args.transform_type == "naive_bias":
                         path_to_transform = os.path.join(
                             args.transforms_root,
                             "naive_transforms_full_data.pkl"
@@ -813,7 +782,7 @@ if __name__ == "__main__":
                     model_id_in_cfg=model_id_in_cfg,
                     embeddings=embeddings,
                     solver=args.solver,
-                    run_baseline=args.transform_type == "oldbias",
+                    transform=False if args.transform_type == "without" else True,
                 )
                 all_results.append(results)
         results = pd.concat(all_results)
