@@ -1,5 +1,4 @@
 import argparse
-import itertools
 import os
 import pickle
 from datetime import datetime
@@ -219,17 +218,13 @@ def is_embedding_source(source: str) -> bool:
     return source not in ["torchvision", "custom"]
 
 
-def get_subset_indices(dataset, cls_id: Union[int, List[int]]):
-    if type(cls_id) == int:
+def get_subset_indices(dataset: Any, cls_id: Union[int, List[int]]) -> List[int]:
+    if isinstance(cls_id, int):
         cls_id = [cls_id]
-    try:
-        subset_indices = [
-            i_cls for i_cls, cls in enumerate(dataset.targets) if cls in cls_id
-        ]
-    except AttributeError:
-        subset_indices = [
-            i_cls for i_cls, cls in enumerate(dataset._labels) if cls in cls_id
-        ]
+    attr = "targets" if hasattr(dataset, "targets") else "_labels"
+    subset_indices = [
+        i_cls for i_cls, cls in enumerate(getattr(dataset, attr)) if cls in cls_id
+    ]
     return subset_indices
 
 
@@ -374,10 +369,9 @@ def create_config_dicts(args, embedding_keys=None) -> Tuple[FrozenDict, FrozenDi
         model_cfg.embeddings_root = args.embeddings_root  # .split("/")[-1]
         model_cfg.names = [k for k in embedding_keys]
     else:
-        if hasattr(args, "embeddings_root"):
-            embeddings_root = args.embeddings_root
-        else:
-            embeddings_root = None
+        embeddings_root = (
+            args.embeddings_root if hasattr(args, "embeddings_root") else None
+        )
         model_cfg.embeddings_root = embeddings_root
         model_cfg.names = args.model_names
     data_cfg.embeddings_root = model_cfg.embeddings_root
@@ -386,12 +380,8 @@ def create_config_dicts(args, embedding_keys=None) -> Tuple[FrozenDict, FrozenDi
     data_cfg.root = args.data_root
     data_cfg.name = args.dataset
     data_cfg.resample_testset = args.resample_testset
-    try:
-        data_cfg.category = args.category
-    except:
-        data_cfg.category = None
+    data_cfg.category = args.category if hasattr(args, "category") else None
     data_cfg = config_dict.FrozenConfigDict(data_cfg)
-
     return model_cfg, data_cfg
 
 
@@ -539,10 +529,6 @@ def getattribute(object: object, att: str) -> Union[bool, float, int, str]:
     if hasattr(object, att):
         return getattr(object, att)
     return None
-
-
-def _add_model(model_cfg, f):
-    return f(model_cfg=model_cfg)
 
 
 if __name__ == "__main__":
