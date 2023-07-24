@@ -563,13 +563,10 @@ if __name__ == "__main__":
         except:
             print("Could not load embeddings. Continuing without embeddings.")
             embeddings = None
-        try:
-            # Remove dicitonary level if it exists
+        if isinstance(embeddings, dict):
             embeddings = embeddings[
                 "embeddings" if args.module == "penultimate" else "logits"
             ]
-        except:
-            pass
     else:
         embeddings = None
     model_cfg, data_cfg = create_config_dicts(args, None)
@@ -721,7 +718,7 @@ if __name__ == "__main__":
                     tau=tau,
                     contrastive_batch_size=contrastive_batch_size,
                 )
-                if not "mean" in transforms[src][model_name].transform.keys():
+                if "mean" not in transforms[src][model_name].transform.keys():
                     # Backward compatibility with old transforms that don't have mean and std
                     with open(args.things_embeddings_path, "rb") as f:
                         things_features = pickle.load(f)
