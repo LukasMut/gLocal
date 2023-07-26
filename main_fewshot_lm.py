@@ -480,10 +480,10 @@ def run(
             end_t_train_data = datetime.now()
             print("Time to load test data: ", (end_t_train_data - start_t_train_data))
 
-        if transform:
-            test_features = transforms[source][model_name].transform_features(
-                test_features
-            )
+            if transform:
+                test_features = transforms[source][model_name].transform_features(
+                    test_features
+                )
         acc, _ = test_regression(
             regressors[i_rep],
             test_targets,
@@ -648,7 +648,9 @@ if __name__ == "__main__":
 
         # Load transforms
         try:
-            if args.transform_type != "glocal":
+            if args.transform_type == "without":
+                transforms[src][model_name] = None
+            elif args.transform_type != "glocal":
                 try:
                     if args.transform_type == "naive":
                         path_to_transform = os.path.join(
