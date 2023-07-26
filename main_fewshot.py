@@ -252,10 +252,7 @@ def get_features_targets(
     sample_per_superclass: bool = False,
 ):
     ids_subset = class_ids if ids_subset is None else ids_subset
-    dataset_is_embedded = (
-        is_embedding_source(source) not in ["torchvision", "custom"]
-        or embeddings is not None
-    )
+    dataset_is_embedded = is_embedding_source(source) or embeddings is not None
 
     if dataset_is_embedded:
         # Load the dataset from an embedding source
@@ -489,8 +486,6 @@ def run(
                 train_features, train_targets, regressor_type, n_shot, solver=solver
             )
             regressors[use_transforms].append(regressor)
-
-    
 
     # Extract and evaluate features w and w/o transform. Due to memory constraints, for each class individually.
     results = []
