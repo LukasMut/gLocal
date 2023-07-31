@@ -247,10 +247,7 @@ def get_features_targets(
     sample_per_superclass: bool = False,
 ):
     ids_subset = class_ids if ids_subset is None else ids_subset
-    dataset_is_embedded = (
-        is_embedding_source(source) not in ["torchvision", "custom"]
-        or embeddings is not None
-    )
+    dataset_is_embedded = is_embedding_source(source) or embeddings is not None
 
     if dataset_is_embedded:
         # Load the dataset from an embedding source
@@ -335,7 +332,7 @@ def get_features_targets(
             num_workers=4,
             worker_init_fn=lambda id: np.random.seed(id + i_batch * 4),
         )
-        X, Y = next(batches)
+        X, Y = next(iter(batches))
         X = X.to(device)
         if len(Y.shape) > 1 and Y.shape[1] > 1:
             Y = torch.argmax(Y, dim=1)
@@ -483,10 +480,10 @@ def run(
             end_t_train_data = datetime.now()
             print("Time to load test data: ", (end_t_train_data - start_t_train_data))
 
-        if transform:
-            test_features = transforms[source][model_name].transform_features(
-                test_features
-            )
+            if transform:
+                test_features = transforms[source][model_name].transform_features(
+                    test_features
+                )
         acc, _ = test_regression(
             regressors[i_rep],
             test_targets,
@@ -651,7 +648,9 @@ if __name__ == "__main__":
 
         # Load transforms
         try:
-            if args.transform_type != "glocal":
+            if args.transform_type == "without":
+                transforms[src][model_name] = None
+            elif args.transform_type != "glocal":
                 try:
                     if args.transform_type == "naive":
                         path_to_transform = os.path.join(
