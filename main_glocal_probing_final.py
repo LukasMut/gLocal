@@ -8,8 +8,11 @@ import numpy as np
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
-                                         ModelCheckpoint)
+from pytorch_lightning.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
 from torch.utils.data import DataLoader
 
 import utils
@@ -155,6 +158,11 @@ def parseargs():
         action="store_true",
         help="whether to use a bias in the linear probe",
     )
+    aa(
+        "--adversarial",
+        action="store_true",
+        help="whether to use adversarial triplets for training",
+    )
     aa("--probing_root", type=str, help="path/to/probing")
     aa("--log_dir", type=str, help="directory to checkpoint transformations")
     aa("--rnd_seed", type=int, default=42, help="random seed for reproducibility")
@@ -179,6 +187,7 @@ def create_optimization_config(args) -> Dict[str, Any]:
     optim_cfg["use_bias"] = args.use_bias
     optim_cfg["ckptdir"] = os.path.join(args.log_dir, args.model, args.module)
     optim_cfg["sigma"] = args.sigma
+    optim_cfg["aversarial"] = args.adversarial
     return optim_cfg
 
 
@@ -343,14 +352,24 @@ def save_results(
 
 def get_imagenet_features(root: str, format: str, device: str) -> Tuple[Any, Any]:
     if format == "hdf5":
-        imagenet_train_features = utils.probing.FeaturesHDF5(root=root, split="train",)
-        imagenet_val_features = utils.probing.FeaturesHDF5(root=root, split="val",)
+        imagenet_train_features = utils.probing.FeaturesHDF5(
+            root=root,
+            split="train",
+        )
+        imagenet_val_features = utils.probing.FeaturesHDF5(
+            root=root,
+            split="val",
+        )
     elif format == "pt":
         imagenet_train_features = utils.probing.FeaturesPT(
-            root=root, split="train", device=device,
+            root=root,
+            split="train",
+            device=device,
         )
         imagenet_val_features = utils.probing.FeaturesPT(
-            root=root, split="val", device=device,
+            root=root,
+            split="val",
+            device=device,
         )
     else:
         raise ValueError(
@@ -377,10 +396,16 @@ def run(
         device="cuda" if device == "gpu" else device,
     )
     # use the original train and validation splits from the THINGS data paper
+    if optim_cfg["adversarial"]:
+        train_file_name = "train_90_adversarial.npy"
+        val_file_name = "test_10_adversarial.npy"
+    else:
+        train_file_name = "train_90.npy"
+        val_file_name = "test_10.npy"
     train_triplets = np.load(
-        os.path.join(data_root, "triplets", "train_90.npy")
+        os.path.join(data_root, "triplets", train_file_name)
     ).tolist()
-    val_triplets = np.load(os.path.join(data_root, "triplets", "test_10.npy")).tolist()
+    val_triplets = np.load(os.path.join(data_root, "triplets", val_file_name)).tolist()
     # subtract global mean and normalize by standard deviation of the entire feature matrix
     things_mean = features.mean()
     things_std = features.std()
@@ -388,10 +413,12 @@ def run(
     results = defaultdict(list)
     # convert train and validation triplets into PyTorch datasets
     train_triplets = utils.probing.TripletData(
-        triplets=train_triplets, n_objects=n_objects,
+        triplets=train_triplets,
+        n_objects=n_objects,
     )
     val_triplets = utils.probing.TripletData(
-        triplets=val_triplets, n_objects=n_objects,
+        triplets=val_triplets,
+        n_objects=n_objects,
     )
     train_batches_things = get_batches(
         dataset=train_triplets,
@@ -428,7 +455,8 @@ def run(
         num_workers=num_processes,
     )
     glocal_probe = utils.probing.GlocalFeatureProbe(
-        features=features, optim_cfg=optim_cfg,
+        features=features,
+        optim_cfg=optim_cfg,
     )
     trainer = Trainer(
         accelerator=device,
@@ -443,7 +471,10 @@ def run(
         gradient_clip_algorithm="norm",
     )
     trainer.fit(glocal_probe, train_batches, val_batches)
-    test_performances = trainer.test(glocal_probe, dataloaders=val_batches,)
+    test_performances = trainer.test(
+        glocal_probe,
+        dataloaders=val_batches,
+    )
     predictions = trainer.predict(glocal_probe, dataloaders=val_batches_things)
     for metric, performance in test_performances[0].items():
         results[metric].append(performance)
@@ -477,6 +508,9 @@ if __name__ == "__main__":
         str(args.tau),
         str(args.contrastive_batch_size),
     )
+    if args.adversarial:
+        out_path = os.path.join(out_path, "adversarial")
+
     if not os.path.exists(out_path):
         os.makedirs(out_path, exist_ok=True)
 
