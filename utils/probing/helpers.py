@@ -9,10 +9,16 @@ import numpy as np
 Array = np.ndarray
 
 
-def load_triplets(data_root: str) -> Array:
+def load_triplets(data_root: str, subfolder: str = "triplets", adversarial: bool = False) -> Array:
     """Load original train and test splits for THINGS from disk and concatenate them."""
-    train_triplets = np.load(os.path.join(data_root, "triplets", "train_90.npy"))
-    val_triplets = np.load(os.path.join(data_root, "triplets", "test_10.npy"))
+    if adversarial:
+        train_file_name = "train_90_adversarial.npy"
+        val_file_name = "test_10_adversarial.npy"
+    else:
+        train_file_name = "train_90.npy"
+        val_file_name = "test_10.npy"
+    train_triplets = np.load(os.path.join(data_root, subfolder, train_file_name))
+    val_triplets = np.load(os.path.join(data_root, subfolder, val_file_name))
     triplets = np.concatenate((train_triplets, val_triplets), axis=0)
     return triplets.astype(int)
 

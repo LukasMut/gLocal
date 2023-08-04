@@ -84,6 +84,11 @@ def parseargs():
             "val",
         ],
     )
+    aa(
+        "--extract_cls_token",
+        action="store_true",
+        help="whether to exclusively extract the [cls] token for DINO models",
+    )
     aa("--device", type=str, default="cuda", choices=["cpu", "cuda"])
     args = parser.parse_args()
     return args
@@ -97,6 +102,7 @@ def create_model_config(args) -> Dict[str, str]:
     model_cfg["module"] = model_config[args.model][args.module]["module_name"]
     model_cfg["source"] = args.source
     model_cfg["device"] = args.device
+    model_cfg["extract_cls_token"] = args.extract_cls_token
     return model_cfg
 
 
@@ -112,9 +118,12 @@ def load_extractor(model_cfg: Dict[str, str]) -> Any:
         else:
             name, variant, data = model_name.split("_")
         model_params = dict(variant=variant, dataset=data)
-    elif model_name.startswith("clip"):
+    elif re.search(r"^(clip|DreamSim|Harmonization)", model_name):
         name, variant = model_name.split("_")
         model_params = dict(variant=variant)
+    elif model_cfg["extract_cls_token"]:
+        name = model_name
+        model_params = dict(extract_cls_token=True)
     else:
         name = model_name
         model_params = None
