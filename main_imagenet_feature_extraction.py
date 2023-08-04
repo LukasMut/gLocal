@@ -118,8 +118,13 @@ def load_extractor(model_cfg: Dict[str, str]) -> Any:
         else:
             name, variant, data = model_name.split("_")
         model_params = dict(variant=variant, dataset=data)
-    elif re.search(r"^(clip|DreamSim|Harmonization)", model_name):
+    elif model_name.startswith("clip"):
         name, variant = model_name.split("_")
+        model_params = dict(variant=variant)
+    elif model_name.startswith("DreamSim"):
+        model_name = model_name.split("_")
+        name = model_name[0]
+        variant = "_".join(model_name[1:])
         model_params = dict(variant=variant)
     elif model_cfg["extract_cls_token"]:
         name = model_name
