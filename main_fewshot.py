@@ -91,7 +91,7 @@ def parseargs():
         type=int,
         nargs="+",
         help="Number samples per class for training",
-        default=10,
+        default=5,
     )
     aa(
         "--n_test",
@@ -109,7 +109,7 @@ def parseargs():
         "--regressor_type",
         type=str,
         nargs="+",
-        choices=["ridge", "knn"],
+        choices=["ridge", "knn", "tip"],
         help="Few shot model.",
     )
     aa(
@@ -204,9 +204,20 @@ def parseargs():
         help="path/to/embeddings of the dataset",
     )
     aa(
+        "--zero_shot_root",
+        type=str,
+        default=None,
+        help="path/to/zero_shot_weights. only reqired for tip-adapter.",
+    )
+    aa(
         "--full_data",
         action="store_true",
         help="Whether to use the transformed trained on the full data.",
+    )
+    aa(
+        "--adversarial",
+        action="store_true",
+        help="Whether to use the adversarial transforms.",
     )
     aa("--out_dir", type=str, help="directory to save the results to")
     aa("--rnd_seed", type=int, default=42, help="random seed for reproducibility")
@@ -399,6 +410,7 @@ def run(
     embeddings: Optional[Dict] = None,
     solver: str = "lbfgs",
     transform: bool = True,
+    zero_shot_weights: Optional[Array] = None,
 ) -> pd.DataFrame:
     if class_id_set_test is None:
         class_id_set_test = class_id_set
@@ -439,6 +451,12 @@ def run(
     end_t_train_data = datetime.now()
     print("Time to load train data: ", (end_t_train_data - start_t_train_data))
 
+    if transform:
+        # Align text features
+        zero_shot_weights = transforms[source][model_name].transform_features(
+            zero_shot_weights
+        )
+
     # Fit multinomial logitstic regression
     regressors = []
     for train_features, train_targets in zip(train_features_all, train_targets_all):
@@ -453,6 +471,7 @@ def run(
             regressor_type=regressor_type,
             k=n_shot,
             solver=solver,
+            zero_shot_weights=zero_shot_weights
         )
         regressors.append(regressor)
 
@@ -546,7 +565,6 @@ if __name__ == "__main__":
         else:
             class_id_set = args.class_id_set
         class_id_set_test = class_id_set
-    n_shot = args.n_shot
     n_test = args.n_test
     device = torch.device(args.device)
 
@@ -716,6 +734,7 @@ if __name__ == "__main__":
                     alpha=alpha,
                     tau=tau,
                     contrastive_batch_size=contrastive_batch_size,
+                    adversarial=args.adversarial
                 )
                 if "mean" not in transforms[src][model_name].transform.keys():
                     # Backward compatibility with old transforms that don't have mean and std
@@ -738,6 +757,21 @@ if __name__ == "__main__":
 
         # Do few-shot
         for regressor_type in regressor_types:
+            # Load a zero-shot model, using Tip-Adapter
+            if regressor_type == "tip":
+                print("Loading zero-shot model from: ", args.zero_shot_root)
+                with open(os.path.join(args.zero_shot_root, model_name + ".pkl"), "rb") as f:
+                    if args.dataset == "imagenet":
+                        # Breeds subsets
+                        key = args.task
+                    else:
+                        key = args.dataset
+                        if (args.dataset == "cifar100" and args.task == "coarse"):
+                            key += "c"
+                    zero_shot_weights = pickle.load(f)[key]
+            else:
+                zero_shot_weights = None
+
             for shots in n_shots:
                 if regressor_type == "ridge" and shots == 1:
                     continue
@@ -765,6 +799,7 @@ if __name__ == "__main__":
                     embeddings=embeddings,
                     solver=args.solver,
                     transform=False if args.transform_type == "without" else True,
+                    zero_shot_weights=zero_shot_weights,
                 )
                 all_results.append(results)
         results = pd.concat(all_results)

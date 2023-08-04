@@ -5,6 +5,8 @@ import numpy as np
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.neighbors import KNeighborsRegressor
 
+from downstream.fewshot.tip_adapter import TipAdapter
+
 Array = np.ndarray
 
 
@@ -45,6 +47,15 @@ def train_knn(train_targets: Array, train_features: Array, k: int = 1):
 
     print("Finished training. Elapsed time:", datetime.now() - start_t)
 
+    return reg
+
+
+def train_tip(train_targets: Array, train_features: Array, zero_shot_weights: Array):
+    one_hot_targets = np.zeros((train_targets.size, train_targets.max() + 1))
+    one_hot_targets[np.arange(train_targets.size), train_targets] = 1
+    F = train_features / np.linalg.norm(train_features, axis=1, keepdims=True)
+    W = zero_shot_weights / np.linalg.norm(zero_shot_weights, axis=1, keepdims=True)
+    reg = TipAdapter(F=F, W=W, L=one_hot_targets)
     return reg
 
 
@@ -92,11 +103,14 @@ def get_regressor(
     regressor_type: str,
     k: Optional[int] = None,
     solver: str = "lbfgs",
+    zero_shot_weights: Optional[Array] = None
 ):
     if regressor_type == "ridge":
         regressor = train_regression(train_targets, train_features, k=k, solver=solver)
     elif regressor_type == "knn":
         regressor = train_knn(train_targets, train_features)
+    elif regressor_type == "tip":
+        regressor = train_tip(train_targets, train_features, zero_shot_weights=zero_shot_weights)
     else:
         raise ValueError(f"Unknown regressor: {regressor_type}")
     return regressor
