@@ -10,8 +10,11 @@ import numpy as np
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
-                                         ModelCheckpoint)
+from pytorch_lightning.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
 from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -83,7 +86,7 @@ def parseargs():
         default=1e-3,
         nargs="+",
         help="Relative contribution of the l2 or identity regularization penality",
-        choices=[10., 1.0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
+        choices=[10.0, 1.0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5],
     )
     aa(
         "--alphas",
@@ -163,6 +166,11 @@ def parseargs():
         action="store_true",
         help="whether to use a bias in the linear probe",
     )
+    aa(
+        "--adversarial",
+        action="store_true",
+        help="whether to use adversarial triplets for training",
+    )
     aa("--probing_root", type=str, help="path/to/probing")
     aa("--log_dir", type=str, help="directory to checkpoint transformations")
     aa("--rnd_seed", type=int, default=42, help="random seed for reproducibility")
@@ -208,6 +216,7 @@ def create_optimization_config(
     optim_cfg["use_bias"] = args.use_bias
     optim_cfg["ckptdir"] = os.path.join(args.log_dir, args.model, args.module)
     optim_cfg["sigma"] = args.sigma
+    optim_cfg["adversarial"] = args.adversarial
     return optim_cfg
 
 
@@ -430,7 +439,9 @@ def run(
         format=features_format,
         device="cuda" if device == "gpu" else device,
     )
-    triplets = utils.probing.load_triplets(data_root)
+    triplets = utils.probing.load_triplets(
+        data_root=data_root, adversarial=optim_cfg["adversarial"]
+    )
     things_mean = features.mean()
     things_std = features.std()
     features = (
@@ -554,6 +565,9 @@ if __name__ == "__main__":
         str(tau),
         str(contrastive_batch_size),
     )
+    if args.adversarial:
+        out_path = os.path.join(out_path, "adversarial")
+
     if not os.path.exists(out_path):
         os.makedirs(out_path, exist_ok=True)
 
