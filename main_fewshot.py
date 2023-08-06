@@ -451,7 +451,7 @@ def run(
     end_t_train_data = datetime.now()
     print("Time to load train data: ", (end_t_train_data - start_t_train_data))
 
-    if transform:
+    if transform and zero_shot_weights is not None:
         # Align text features
         zero_shot_weights = transforms[source][model_name].transform_features(
             zero_shot_weights
@@ -629,7 +629,7 @@ if __name__ == "__main__":
             os.makedirs(out_path)
         out_file_path = os.path.join(out_path, "fewshot_results.pkl")
 
-        if os.path.isfile(out_file_path):
+        if False:#os.path.isfile(out_file_path):
             print("Results already exist. Skipping...")
             print(f"Results file: {out_file_path}")
             continue
@@ -736,6 +736,8 @@ if __name__ == "__main__":
                     contrastive_batch_size=contrastive_batch_size,
                     adversarial=args.adversarial
                 )
+                print("Advertisarial: ", args.adversarial)
+                print("Transforms: ", transforms[src][model_name].transform["weights"][0,:5])
                 if "mean" not in transforms[src][model_name].transform.keys():
                     # Backward compatibility with old transforms that don't have mean and std
                     with open(args.things_embeddings_path, "rb") as f:
@@ -760,7 +762,7 @@ if __name__ == "__main__":
             # Load a zero-shot model, using Tip-Adapter
             if regressor_type == "tip":
                 print("Loading zero-shot model from: ", args.zero_shot_root)
-                with open(os.path.join(args.zero_shot_root, model_name + ".pkl"), "rb") as f:
+                with open(os.path.join(args.zero_shot_root, model_name.replace("/", "-") + ".pkl"), "rb") as f:
                     if args.dataset == "imagenet":
                         # Breeds subsets
                         key = args.task
