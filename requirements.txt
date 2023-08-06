@@ -15,7 +15,7 @@ seaborn
 tensorflow
 thingsvision==2.3.20
 torchvision==0.14.1
-torch
+torch==1.13.*
 tqdm
 tueplots
 git+https://github.com/openai/CLIP.git
