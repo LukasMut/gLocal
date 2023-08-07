@@ -177,7 +177,7 @@ def create_config_dicts(args) -> Tuple[FrozenDict, FrozenDict]:
 
 def load_extractor(
     model_name: str, source: str, device: str, extract_cls_token: bool = False
-) -> Any:
+):
     if model_name.startswith("OpenCLIP"):
         if "laion" in model_name:
             meta_vars = model_name.split("_")
@@ -228,6 +228,7 @@ def evaluate(args) -> None:
             model_name=model_name,
             source=source,
             device=args.device,
+            pretrained=not args.not_pretrained,
             extract_cls_token=model_cfg.extract_cls_token,
         )
         dataset = load_dataset(
