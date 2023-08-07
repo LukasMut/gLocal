@@ -7,6 +7,7 @@ matplotlib
 ml_collections
 numpy
 pandas
+protobuf
 pyflakes
 pytorch_lightning==1.8.*
 Pillow
