@@ -10,8 +10,11 @@ import numpy as np
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
-                                         ModelCheckpoint)
+from pytorch_lightning.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
 from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader
 from tqdm import tqdm

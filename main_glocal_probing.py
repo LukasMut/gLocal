@@ -10,8 +10,11 @@ import numpy as np
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
-                                         ModelCheckpoint)
+from pytorch_lightning.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
 from sklearn.model_selection import KFold
 from thingsvision import get_extractor
 from torch.utils.data import DataLoader
@@ -195,6 +198,7 @@ def create_optimization_config(
     alpha: float,
     tau: float,
     contrastive_batch_size: int,
+    out_path: str,
 ) -> Dict[str, Any]:
     """Create frozen config dict for optimization hyperparameters."""
     optim_cfg = dict()
@@ -212,6 +216,7 @@ def create_optimization_config(
     optim_cfg["use_bias"] = args.use_bias
     optim_cfg["ckptdir"] = os.path.join(args.log_dir, args.model, args.module)
     optim_cfg["sigma"] = args.sigma
+    optim_cfg["out_path"] = out_path
     return optim_cfg
 
 
@@ -268,7 +273,7 @@ def get_callbacks(optim_cfg: FrozenDict, steps: int = 20) -> List[Callable]:
     checkpoint_callback = ModelCheckpoint(
         monitor="val_overall_loss",
         dirpath=optim_cfg["ckptdir"],
-        filename="ooo-finetuning-epoch{epoch:02d}-val_overall_loss{val/overall_loss:.2f}",  
+        filename="ooo-finetuning-epoch{epoch:02d}-val_overall_loss{val/overall_loss:.2f}",
         auto_insert_metric_name=False,
         every_n_epochs=steps,
     )
@@ -448,9 +453,11 @@ def run(
     features = (
         features - things_mean
     ) / things_std  # subtract global mean and normalize by standard deviation of feature matrix
+    optim_cfg["things_mean"] = things_mean
+    optim_cfg["things_std"] = things_std
     objects = np.arange(n_objects)
     # For glocal optimization, we don't need to perform k-Fold cross-validation (we can simply set k=4 or 5)
-    kf = KFold(n_splits=4, random_state=rnd_seed, shuffle=True)
+    kf = KFold(n_splits=3, random_state=rnd_seed, shuffle=True)
     cv_results = defaultdict(list)
     ooo_choices = []
     for train_idx, _ in tqdm(kf.split(objects), desc="Fold"):
@@ -555,6 +562,22 @@ if __name__ == "__main__":
         contrastive_batch_sizes=args.contrastive_batch_sizes,
     )
 
+    out_path = os.path.join(
+        args.probing_root,
+        "results",
+        args.source,
+        args.model,
+        args.module,
+        args.optim.lower(),
+        str(args.eta),
+        str(lmbda),
+        str(alpha),
+        str(tau),
+        str(contrastive_batch_size),
+    )
+    if not os.path.exists(out_path):
+        os.makedirs(out_path, exist_ok=True)
+
     optim_cfg = create_optimization_config(
         args=args,
         eta=eta,
@@ -562,6 +585,7 @@ if __name__ == "__main__":
         alpha=alpha,
         tau=tau,
         contrastive_batch_size=contrastive_batch_size,
+        out_path=out_path,
     )
     model_cfg = create_model_config(args)
     ooo_choices, cv_results, transform, things_mean, things_std = run(
@@ -582,24 +606,9 @@ if __name__ == "__main__":
         probing_performances=probing_performances,
         ooo_choices=ooo_choices,
     )
-    out_path = os.path.join(
-        args.probing_root,
-        "results",
-        args.source,
-        args.model,
-        args.module,
-        args.optim.lower(),
-        str(args.eta),
-        str(lmbda),
-        str(alpha),
-        str(tau),
-        str(contrastive_batch_size),
-    )
-    if not os.path.exists(out_path):
-        os.makedirs(out_path, exist_ok=True)
 
     if optim_cfg["use_bias"]:
-        with open(os.path.join(out_path, "transform_with_bias.npz"), "wb") as f:
+        with open(os.path.join(out_path, "transform.npz"), "wb") as f:
             np.savez_compressed(
                 file=f,
                 weights=transform["weights"],
@@ -608,7 +617,7 @@ if __name__ == "__main__":
                 std=things_std,
             )
     else:
-        with open(os.path.join(out_path, "transform_no_bias.npz"), "wb") as f:
+        with open(os.path.join(out_path, "transform.npz"), "wb") as f:
             np.savez_compressed(
                 file=f,
                 weights=transform["weights"],
