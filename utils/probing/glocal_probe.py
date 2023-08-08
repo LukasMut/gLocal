@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Tuple
 
+import os
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -41,6 +42,7 @@ class GlocalProbe(pl.LightningModule):
         ]  # whether or not to use a bias for the probe
         self.max_epochs = optim_cfg["max_epochs"]
         self.module = model_cfg["module"]
+        self.out_path = optim_cfg["out_path"]
 
         self.global_loss_fun = TripletLoss(temperature=1.0)
         self.local_loss_fun = ContrastiveLoss(temperature=self.temp)
@@ -327,6 +329,9 @@ class GlocalFeatureProbe(pl.LightningModule):
             "use_bias"
         ]  # whether or not to use a bias for the probe
         self.max_epochs = optim_cfg["max_epochs"]
+        self.out_path = optim_cfg["out_path"]
+        self.things_mean = optim_cfg["things_mean"]
+        self.things_std = optim_cfg["things_std"]
 
         self.global_loss_fun = TripletLoss(temperature=1.0)
         self.local_loss_fun = ContrastiveLoss(temperature=self.temp)
@@ -497,11 +502,31 @@ class GlocalFeatureProbe(pl.LightningModule):
         self.log("local_loss", locality_loss, on_epoch=True)
         self.log("complexity_loss", complexity_loss, on_epoch=True)
         return loss
+    
+    def _save_transform_snapshot(self) -> None:
+        if self.use_bias:
+            with open(os.path.join(self.out_path, "transform_tmp.npz"), "wb") as f:
+                np.savez_compressed(
+                    file=f,
+                    weights=self.transform_w.detach().cpu().numpy(),
+                    bias=self.transform_b.detach().cpu().numpy(),
+                    mean=self.things_mean,
+                    std=self.things_std,
+                )
+        else:
+            with open(os.path.join(self.out_path, "transform_tmp.npz"), "wb") as f:
+                np.savez_compressed(
+                    file=f,
+                    weights=self.transform_w.detach().cpu().numpy(),
+                    mean=self.things_mean,
+                    std=self.things_std,
+                )
 
     def validation_step(
         self, batch: Tuple[Tensor, Tensor], batch_idx: int
     ) -> Dict[str, float]:
         global_loss, locality_loss, loss, acc = self._shared_eval_step(batch, batch_idx)
+        self._save_transform_snapshot()
         metrics = {
             "val_acc": acc,
             "val_overall_loss": loss,

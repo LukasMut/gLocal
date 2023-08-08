@@ -10,11 +10,8 @@ import numpy as np
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import (
-    EarlyStopping,
-    LearningRateMonitor,
-    ModelCheckpoint,
-)
+from pytorch_lightning.callbacks import (EarlyStopping, LearningRateMonitor,
+                                         ModelCheckpoint)
 from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -199,6 +196,7 @@ def create_optimization_config(
     alpha: float,
     tau: float,
     contrastive_batch_size: int,
+    out_path: str,
 ) -> Dict[str, Any]:
     """Create frozen config dict for optimization hyperparameters."""
     optim_cfg = dict()
@@ -217,6 +215,7 @@ def create_optimization_config(
     optim_cfg["ckptdir"] = os.path.join(args.log_dir, args.model, args.module)
     optim_cfg["sigma"] = args.sigma
     optim_cfg["adversarial"] = args.adversarial
+    optim_cfg["out_path"] = out_path
     return optim_cfg
 
 
@@ -447,6 +446,8 @@ def run(
     features = (
         features - things_mean
     ) / things_std  # subtract global mean and normalize by standard deviation of feature matrix
+    optim_cfg["things_mean"] = things_mean
+    optim_cfg["things_std"] = things_std
     objects = np.arange(n_objects)
     # For glocal optimization, we don't need to perform k-Fold cross-validation (we can simply set k=4 or 5)
     kf = KFold(n_splits=4, random_state=rnd_seed, shuffle=True)
@@ -584,6 +585,7 @@ if __name__ == "__main__":
             alpha=alpha,
             tau=tau,
             contrastive_batch_size=contrastive_batch_size,
+            out_path=out_path,
         )
 
         ooo_choices, cv_results, transform, things_mean, things_std = run(
