@@ -21,6 +21,7 @@ class Families:
     @property
     def mapping(self) -> Dict[str, str]:
         mapping = {
+            "dino_children": "DINO",
             "clip_children": "CLIP",
             "vit_in_children": "ViT-IN",
             "vit_jft_children": "ViT-JFT",
@@ -106,6 +107,10 @@ class Families:
     @property
     def vgg_children(self):
         return self.search("vgg")
+
+    @property
+    def dino_children(self):
+        return self.search("dino")
 
     @property
     def resnet_children(self):
@@ -222,3 +227,7 @@ class Families:
     @property
     def alexnet(self):
         return "alexnet"
+
+    @property
+    def dino(self):
+        return "dino"

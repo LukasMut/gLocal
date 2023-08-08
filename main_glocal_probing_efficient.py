@@ -308,7 +308,14 @@ def make_results_df(
     ]
     # probing_results_current_run["choices"] = [ooo_choices]
     probing_results_current_run["module"] = module_name
-    probing_results_current_run["family"] = utils.analyses.get_family_name(model_name)
+    try:
+        probing_results_current_run["family"] = utils.analyses.get_family_name(
+            model_name
+        )
+    except UnboundLocalError:
+        probing_results_current_run[
+            "family"
+        ] = model_name  # NOTE: this is a hack to get the family name for the DINO models
     probing_results_current_run["source"] = source
     probing_results_current_run["reg"] = optim_cfg["reg"]
     probing_results_current_run["optim"] = optim_cfg["optim"].lower()
