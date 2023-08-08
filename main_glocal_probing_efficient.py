@@ -610,13 +610,6 @@ if __name__ == "__main__":
             features_format=args.features_format,
         )
         probing_performances = get_mean_cv_performances(cv_results)
-        save_results(
-            args=args,
-            optim_cfg=optim_cfg,
-            probing_performances=probing_performances,
-            ooo_choices=ooo_choices,
-        )
-
         if optim_cfg["use_bias"]:
             with open(out_file_path, "wb") as f:
                 np.savez_compressed(
@@ -634,3 +627,9 @@ if __name__ == "__main__":
                     mean=things_mean,
                     std=things_std,
                 )
+        save_results(
+            args=args,
+            optim_cfg=optim_cfg,
+            probing_performances=probing_performances,
+            ooo_choices=ooo_choices,
+        )
