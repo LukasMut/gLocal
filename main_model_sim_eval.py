@@ -4,6 +4,7 @@
 import argparse
 import os
 import random
+import re
 import warnings
 from collections import defaultdict
 from typing import Any, List, Tuple
@@ -21,7 +22,7 @@ from tqdm import tqdm
 
 import utils
 from data import DATASETS, load_dataset
-from utils.evaluation.transforms import GlobalTransform
+from utils.evaluation.transforms import GlobalTransform, GlocalTransform
 
 FrozenDict = Any
 Tensor = torch.Tensor
@@ -140,6 +141,11 @@ def parseargs():
         help="type of transformation matrix being used",
     )
     aa(
+        "--extract_cls_token",
+        action="store_true",
+        help="whether to exclusively extract the [cls] token for DINO models",
+    )
+    aa(
         "--not_pretrained",
         action="store_true",
         help="load randomly initialized model instead of a pretrained model",
@@ -191,9 +197,45 @@ def create_config_dicts(args) -> Tuple[FrozenDict, FrozenDict]:
     return model_cfg, data_cfg
 
 
+def load_extractor(
+    model_name: str, source: str, device: str, extract_cls_token: bool = False
+):
+    if model_name.startswith("OpenCLIP"):
+        if "laion" in model_name:
+            meta_vars = model_name.split("_")
+            name = meta_vars[0]
+            variant = meta_vars[1]
+            data = "_".join(meta_vars[2:])
+        else:
+            name, variant, data = model_name.split("_")
+        model_params = dict(variant=variant, dataset=data)
+    elif model_name.startswith("clip"):
+        name, variant = model_name.split("_")
+        model_params = dict(variant=variant)
+    elif model_name.startswith("DreamSim"):
+        model_name = model_name.split("_")
+        name = model_name[0]
+        variant = "_".join(model_name[1:])
+        model_params = dict(variant=variant)
+    elif extract_cls_token:
+        name = model_name
+        model_params = dict(extract_cls_token=True)
+    else:
+        name = model_name
+        model_params = None
+
+    extractor = get_extractor(
+        model_name=name,
+        source=source,
+        device=device,
+        pretrained=not args.not_pretrained,
+        model_parameters=model_params,
+    )
+    return extractor
+
+
 def evaluate(args) -> None:
     """Evaluate the alignment of neural nets with human (pairwise) similarity judgments."""
-    device = torch.device(args.device)
     model_cfg, data_cfg = create_config_dicts(args)
     results = []
     model_features = defaultdict(lambda: defaultdict(dict))
@@ -209,29 +251,17 @@ def evaluate(args) -> None:
                     path_to_transform=args.transforms_path,
                     path_to_features=args.things_embeddings_path,
                 )
-        if model_name.startswith("OpenCLIP"):
-            if "laion" in model_name:
-                meta_vars = model_name.split("_")
-                name = meta_vars[0]
-                variant = meta_vars[1]
-                data = "_".join(meta_vars[2:])
-            else:
-                name, variant, data = model_name.split("_")
-            model_params = dict(variant=variant, dataset=data)
-        elif model_name.startswith("clip"):
-            name, variant = model_name.split("_")
-            model_params = dict(variant=variant)
-        else:
-            name = model_name
-            model_params = None
-
-        family_name = utils.analyses.get_family_name(model_name)
-        extractor = get_extractor(
-            model_name=name,
+        family_name = (
+            "DINO"
+            if re.search(r"dino", model_name)
+            else utils.analyses.get_family_name(model_name)
+        )
+        extractor = load_extractor(
+            model_name=model_name,
             source=source,
-            device=device,
+            device=args.device,
             pretrained=not args.not_pretrained,
-            model_parameters=model_params,
+            extract_cls_token=model_cfg.extract_cls_token,
         )
         if model_name.endswith("ecoset"):
             transformations = extractor.get_transformations(
