@@ -228,7 +228,6 @@ def evaluate(args) -> None:
             model_name=model_name,
             source=source,
             device=args.device,
-            pretrained=not args.not_pretrained,
             extract_cls_token=model_cfg.extract_cls_token,
         )
         dataset = load_dataset(
