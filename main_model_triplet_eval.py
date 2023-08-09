@@ -88,6 +88,11 @@ def parseargs():
         help="path/to/results",
     )
     aa(
+        "--extract_cls_token",
+        action="store_true",
+        help="whether to exclusively extract the [cls] token for DINO models",
+    )
+    aa(
         "--device",
         type=str,
         default="cuda",
@@ -114,11 +119,6 @@ def parseargs():
         "--not_pretrained",
         action="store_true",
         help="load random model instead of pretrained",
-    )
-    aa(
-        "--extract_cls_token",
-        action="store_true",
-        help="whether to exclusively extract the [cls] token for DINO models",
     )
     args = parser.parse_args()
     return args
