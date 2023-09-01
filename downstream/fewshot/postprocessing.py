@@ -55,6 +55,10 @@ MODEL2PRETTY = {
     "clip_ViT-L/14": "CLIP-ViT-L/14 (WIT)",
     "OpenCLIP_ViT-L-14_laion400m_e32": "CLIP-ViT-L/14 (LAION-400M)",
     "OpenCLIP_ViT-L-14_laion2b_s32b_b82k": "CLIP-ViT-L/14 (LAION-2B)",
+    "dino-vit-base-p8": "DINO-ViT-base-p8",
+    "dino-vit-base-p16": "DINO-ViT-base-p16",
+    "dinov2-vit-base-p14": "DINOv2-ViT-base-p14",
+    "dinov2-vit-large-p14": "DINOv2-ViT-large-p14",
 }
 MODEL2SRC = {
     "alexnet": "torchvision",
@@ -65,6 +69,10 @@ MODEL2SRC = {
     "clip_ViT-L/14": "custom",
     "OpenCLIP_ViT-L-14_laion400m_e32": "custom",
     "OpenCLIP_ViT-L-14_laion2b_s32b_b82k": "custom",
+    "dino-vit-base-p8": "ssl",
+    "dino-vit-base-p16": "ssl",
+    "dinov2-vit-base-p14": "ssl",
+    "dinov2-vit-large-p14": "ssl",
 }
 PRETTY2ORDER = {
     MODEL2PRETTY["alexnet"]: 0,
@@ -75,7 +83,11 @@ PRETTY2ORDER = {
     MODEL2PRETTY["clip_ViT-L/14"]: 5,
     MODEL2PRETTY["OpenCLIP_ViT-L-14_laion400m_e32"]: 6,
     MODEL2PRETTY["OpenCLIP_ViT-L-14_laion2b_s32b_b82k"]: 7,
-    "baseline": 8,
+    MODEL2PRETTY["dino-vit-base-p8"]: 8,
+    MODEL2PRETTY["dino-vit-base-p16"]: 9,
+    MODEL2PRETTY["dinov2-vit-base-p14"]: 10,
+    MODEL2PRETTY["dinov2-vit-large-p14"]: 11,
+    "baseline": 12,
 }
 
 

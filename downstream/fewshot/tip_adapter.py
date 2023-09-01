@@ -9,7 +9,7 @@ class TipAdapter:
     ):
         self.F = F
         self.L = L
-        self.W = W
+        self.W = W / np.linalg.norm(W, axis=1, keepdims=True)
         self.alpha = alpha
         self.beta = beta
 

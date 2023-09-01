@@ -226,7 +226,7 @@ def parseargs():
 
 
 def is_embedding_source(source: str) -> bool:
-    return source not in ["torchvision", "custom"]
+    return source not in ["torchvision", "custom", "ssl"]
 
 
 def get_subset_indices(dataset: Any, cls_id: Union[int, List[int]]) -> List[int]:
@@ -289,6 +289,7 @@ def get_features_targets(
             else:
                 # For imagenet, we need to load the embeddings from individual files
                 embeddings = None
+
             dataset = load_dataset(
                 name=data_cfg.name,
                 data_dir=data_cfg.root,
@@ -656,6 +657,7 @@ if __name__ == "__main__":
                     )
                     > 0
                 )
+                is_opt = is_opt or "dino" in model_name.lower() #TODO: remove this hack
                 if is_opt == 0:
                     print("Transforms not optimal. Skipping...")
                     continue
@@ -736,8 +738,7 @@ if __name__ == "__main__":
                     contrastive_batch_size=contrastive_batch_size,
                     adversarial=args.adversarial
                 )
-                print("Advertisarial: ", args.adversarial)
-                print("Transforms: ", transforms[src][model_name].transform["weights"][0,:5])
+                print("Adversarial: ", args.adversarial)
                 if "mean" not in transforms[src][model_name].transform.keys():
                     # Backward compatibility with old transforms that don't have mean and std
                     with open(args.things_embeddings_path, "rb") as f:
