@@ -19,6 +19,7 @@ class EmbeddedImageNet(ImageNet):
     ) -> None:
         super(EmbeddedImageNet, self).__init__(root=root, split=split, **kwargs)
         self.device = torch.device(device)
+        print(f"Embedding root (imagenet) {embedding_root}", self.split)
         self.feature_order = sorted(
             [
                 os.path.join(embedding_root, self.split, f.name)
@@ -30,6 +31,7 @@ class EmbeddedImageNet(ImageNet):
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         _, target = self.samples[index]
         sample = torch.load(self.feature_order[index], map_location=torch.device(self.device))
+
         if self.target_transform is not None:
             target = self.target_transform(target)
 
