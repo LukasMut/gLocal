@@ -51,12 +51,32 @@ def train_knn(train_targets: Array, train_features: Array, k: int = 1):
 
 
 def train_tip(train_targets: Array, train_features: Array, zero_shot_weights: Array):
+    start_t = datetime.now()
+
     one_hot_targets = np.zeros((train_targets.size, train_targets.max() + 1))
     one_hot_targets[np.arange(train_targets.size), train_targets] = 1
     F = train_features / np.linalg.norm(train_features, axis=1, keepdims=True)
     W = zero_shot_weights / np.linalg.norm(zero_shot_weights, axis=1, keepdims=True)
-    reg = TipAdapter(F=F, W=W, L=one_hot_targets)
-    return reg
+
+    alpha_list = [.5,1.,2.]
+    beta_list = [3.5, 5.5, 7.5]
+    best_reg = None
+    best_beta, best_alpha, best_acc = 0, 0, 0
+
+    for beta in beta_list:
+        for alpha in alpha_list:
+            reg = TipAdapter(F=F, W=W, L=one_hot_targets, alpha=alpha, beta=beta)
+            acc, _ = test_regression(reg, train_targets, train_features)
+            if acc > best_acc:
+                best_acc = acc
+                best_beta = beta
+                best_alpha = alpha
+                best_reg = reg
+
+    print("Finished training. Elapsed time:", datetime.now() - start_t)
+    print("\tBest beta: %.3f, best alpha: %.3f, best acc: %.3f" % (best_beta, best_alpha, best_acc))
+
+    return best_reg
 
 
 def test_regression(
@@ -75,25 +95,6 @@ def test_regression(
     except AttributeError:
         print("Accuracy: %.3f" % acc)
 
-    return acc, preds
-
-
-def regress(
-    train_targets: Array,
-    train_features: Array,
-    test_targets: Array,
-    test_features: Array,
-    k: int = None,
-    regressor: str = "ridge",
-    solver: str = "lbfgs",
-):
-    if regressor == "ridge":
-        reg = train_regression(train_targets, train_features, k, solver=solver)
-    elif regressor == "knn":
-        reg = train_knn(train_targets, train_features)
-    else:
-        raise ValueError(f"Unknown regressor: {regressor}")
-    acc, preds = test_regression(reg, test_targets, test_features)
     return acc, preds
 
 
