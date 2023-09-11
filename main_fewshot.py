@@ -624,7 +624,7 @@ if __name__ == "__main__":
             os.makedirs(out_path)
         out_file_path = os.path.join(out_path, "fewshot_results.pkl")
 
-        if False:#os.path.isfile(out_file_path):
+        if os.path.isfile(out_file_path):
             print("Results already exist. Skipping...")
             print(f"Results file: {out_file_path}")
             continue
@@ -651,7 +651,7 @@ if __name__ == "__main__":
                     )
                     > 0
                 )
-                is_opt = is_opt or "dino" in model_name.lower() #TODO: remove this hack
+                is_opt = is_opt or "dino" in model_name.lower() #TODO: remove this hack once optimal are known
                 if is_opt == 0:
                     print("Transforms not optimal. Skipping...")
                     continue
