@@ -64,12 +64,6 @@ def parseargs():
             "custom",
             "torchvision",
             "ssl",
-            "google",
-            "loss",
-            "imagenet",
-            "torchvision",
-            "vit_same",
-            "vit_best",
         ],
         help="Source of (pretrained) models",
     )
