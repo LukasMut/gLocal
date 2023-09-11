@@ -58,8 +58,9 @@ def train_tip(train_targets: Array, train_features: Array, zero_shot_weights: Ar
     F = train_features / np.linalg.norm(train_features, axis=1, keepdims=True)
     W = zero_shot_weights / np.linalg.norm(zero_shot_weights, axis=1, keepdims=True)
 
-    alpha_list = [.5,1.,2.]
-    beta_list = [3.5, 5.5, 7.5]
+    # The default values appear to work best
+    alpha_list = [1.]
+    beta_list = [5.5]
     best_reg = None
     best_beta, best_alpha, best_acc = 0, 0, 0
 
