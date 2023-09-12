@@ -224,7 +224,6 @@ def make_results_df(
     columns: List[str],
     probing_acc: float,
     probing_loss: float,
-    ooo_choices: Array,
     model_name: str,
     module_name: str,
     source: str,
@@ -239,7 +238,6 @@ def make_results_df(
     probing_results_current_run["model"] = model_name
     probing_results_current_run["probing"] = probing_acc
     probing_results_current_run["cross-entropy"] = probing_loss
-    # probing_results_current_run["choices"] = [ooo_choices]
     probing_results_current_run["module"] = module_name
     probing_results_current_run["family"] = utils.analyses.get_family_name(model_name)
     probing_results_current_run["source"] = source
@@ -253,7 +251,7 @@ def make_results_df(
 
 
 def save_results(
-    args, probing_acc: float, probing_loss: float, ooo_choices: Array
+    args, probing_acc: float, probing_loss: float,
 ) -> None:
     out_path = os.path.join(args.probing_root, "results")
     if not os.path.exists(out_path):
@@ -271,7 +269,6 @@ def save_results(
             columns=probing_results_overall.columns.values,
             probing_acc=probing_acc,
             probing_loss=probing_loss,
-            ooo_choices=ooo_choices,
             model_name=args.model,
             module_name=args.module,
             source=args.source,
@@ -294,7 +291,6 @@ def save_results(
             "model",
             "probing",
             "cross-entropy",
-            # "choices",
             "module",
             "family",
             "source",
@@ -309,7 +305,6 @@ def save_results(
             columns=columns,
             probing_acc=probing_acc,
             probing_loss=probing_loss,
-            ooo_choices=ooo_choices,
             model_name=args.model,
             module_name=args.module,
             source=args.source,
@@ -394,16 +389,12 @@ def run(
             linear_probe,
             dataloaders=val_batches,
         )
-        predictions = trainer.predict(linear_probe, dataloaders=val_batches)
-        predictions = torch.cat(predictions, dim=0).tolist()
-        ooo_choices.append(predictions)
         cv_results[f"fold_{k:02d}"] = val_performance
     transformation = {}
     transformation["weights"] = linear_probe.transform_w.data.detach().cpu().numpy()
     if optim_cfg["use_bias"]:
         transformation["bias"] = linear_probe.transform_b.data.detach().cpu().numpy()
-    ooo_choices = np.concatenate(ooo_choices)
-    return ooo_choices, cv_results, transformation, things_mean, things_std
+    return cv_results, transformation, things_mean, things_std
 
 
 if __name__ == "__main__":
@@ -414,7 +405,7 @@ if __name__ == "__main__":
     features = load_features(args.probing_root)
     model_features = features[args.source][args.model][args.module]
     optim_cfg = create_optimization_config(args)
-    ooo_choices, cv_results, transform, things_mean, things_std = run(
+    cv_results, transform, things_mean, things_std = run(
         features=model_features,
         model=args.model,
         module=args.module,
@@ -429,7 +420,7 @@ if __name__ == "__main__":
     avg_cv_acc = get_mean_cv_acc(cv_results)
     avg_cv_loss = get_mean_cv_loss(cv_results)
     save_results(
-        args, probing_acc=avg_cv_acc, probing_loss=avg_cv_loss, ooo_choices=ooo_choices
+        args, probing_acc=avg_cv_acc, probing_loss=avg_cv_loss
     )
 
     out_path = os.path.join(
