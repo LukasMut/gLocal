@@ -378,6 +378,7 @@ def run(
             strategy="ddp_spawn" if device == "cpu" else None,
             # strategy="ddp",
             max_epochs=optim_cfg["max_epochs"],
+        
             min_epochs=optim_cfg["min_epochs"],
             devices=num_processes if device == "cpu" else "auto",
             enable_progress_bar=True,

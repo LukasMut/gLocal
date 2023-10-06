@@ -95,8 +95,50 @@ def parseargs():
         choices=["cpu", "cuda"],
         help="whether feature extraction should be performed on CPU or GPU (i.e., CUDA).",
     )
+    aa(
+        "--extract_cls_token",
+        action="store_true",
+        help="only extract [CLS] token from a ViT model",
+    )
     args = parser.parse_args()
     return args
+
+
+def load_extractor(
+    model_name: str, source: str, device: str, extract_cls_token: bool = False
+):
+    if model_name.startswith("OpenCLIP"):
+        if "laion" in model_name:
+            meta_vars = model_name.split("_")
+            name = meta_vars[0]
+            variant = meta_vars[1]
+            data = "_".join(meta_vars[2:])
+        else:
+            name, variant, data = model_name.split("_")
+        model_params = dict(variant=variant, dataset=data)
+    elif model_name.startswith("clip"):
+        name, variant = model_name.split("_")
+        model_params = dict(variant=variant)
+    elif model_name.startswith("DreamSim"):
+        model_name = model_name.split("_")
+        name = model_name[0]
+        variant = "_".join(model_name[1:])
+        model_params = dict(variant=variant)
+    elif extract_cls_token:
+        name = model_name
+        model_params = dict(extract_cls_token=True)
+    else:
+        name = model_name
+        model_params = None
+
+    extractor = get_extractor(
+        model_name=name,
+        source=source,
+        device=device,
+        pretrained=True,
+        model_parameters=model_params,
+    )
+    return extractor
 
 
 def feature_extraction(
@@ -109,30 +151,15 @@ def feature_extraction(
     features_root: str,
     category: str = None,
     stimulus_set: str = None,
+    extract_cls_token: bool = False,
 ) -> None:
     for dataset in tqdm(datasets, desc="Dataset"):
         for model_name in tqdm(model_names, desc="Model"):
-            if model_name.startswith("OpenCLIP"):
-                if "laion" in model_name:
-                    meta_vars = model_name.split("_")
-                    name = meta_vars[0]
-                    variant = meta_vars[1]
-                    data = "_".join(meta_vars[2:])
-                else:
-                    name, variant, data = model_name.split("_")
-                model_params = dict(variant=variant, dataset=data)
-            elif model_name.startswith("clip"):
-                name, variant = model_name.split("_")
-                model_params = dict(variant=variant)
-            else:
-                name = model_name
-                model_params = None
-            extractor = get_extractor(
-                model_name=name,
+            extractor = load_extractor(
+                model_name=model_name,
                 source=source,
                 device=device,
-                pretrained=True,
-                model_parameters=model_params,
+                extract_cls_token=extract_cls_token,
             )
             transformations = extractor.get_transformations()
             if dataset == "peterson":
@@ -180,4 +207,5 @@ if __name__ == "__main__":
         features_root=args.features_root,
         category=args.category,
         stimulus_set=args.stimulus_set,
+        extract_cls_token=args.extract_cls_token,
     )
