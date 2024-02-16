@@ -47,7 +47,7 @@ def parseargs():
         "--model_names",
         type=str,
         nargs="+",
-        help="models for which we want to extract featues",
+        help="models for which we want to extract features",
     )
     aa(
         "--module",
@@ -104,6 +104,7 @@ def parseargs():
         type=str,
         nargs="+",
         choices=["ridge", "knn", "tip"],
+        default="ridge",
         help="Few shot model.",
     )
     aa(
@@ -651,7 +652,6 @@ if __name__ == "__main__":
                     )
                     > 0
                 )
-                is_opt = is_opt or "dino" in model_name.lower() #TODO: remove this hack once optimal are known
                 if is_opt == 0:
                     print("Transforms not optimal. Skipping...")
                     continue

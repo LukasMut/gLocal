@@ -135,6 +135,30 @@ python main_ad_runner.py
 For individual runs on one model/dataset with more control, the `main_anomaly_detection.py` script can be used.
 
 
+### Few-Shot Classification
+We evaluate the few-shot classification performance on various datasets. First, representations need to be extracted via `main_extract_fs_datasets.py`. Then, `main_fewshot.py` can be run to generate the results. For example:
+
+```bash
+python3 main_fewshot.py \
+--data_root "/path/to/data/name" \
+--task none \
+--dataset SUN397 \
+--input_dim 256 \
+--module penultimate \
+--model_names "OpenCLIP_ViT-L-14_laion2b_s32b_b82k" \
+--sources custom \
+--model_dict_path "/path/to/model_dict.json" \
+--n_test 50 \
+--n_reps 5 \
+--n_classes 397 \
+--out_dir "/path/to/output" \
+--embeddings_root "/path/to/extracted_data/name" \
+--transforms_root "/path/to/transforms" \
+--things_embeddings_path "/path/to/things/model_features_per_source.pkl" \
+--transform_type "without"
+```
+
+Model names and sources are obtained from the `thingsvision` library. For `cifar100`, the task may be set to `coarse`, while for `imagenet` one of (`living17`, `entity13`, `entity30`, `nonliving26`) is expected. `transforms_root` only needs to be set for evaluating transforms other than `without`.
 
 
 
