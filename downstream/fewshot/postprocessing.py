@@ -100,6 +100,13 @@ def parseargs():
     aa("--results_root", type=str, help="path/to/results")
     aa("--out_dir", type=str, help="directory to save the processed results to")
     aa("--all_reps", action="store_true", help="whether to process all repetitions")
+    aa(
+        "--transforms",
+        type=str,
+        nargs="+",
+        default=None,
+        help="which transforms to process. None means all.",
+    )
     args = parser.parse_args()
     return args
 
@@ -116,7 +123,8 @@ def get_file_paths(root: str):
 
 
 def get_configs_data(data: pd.DataFrame):
-    """Returns a list of dataframes, each containing the results for a unique configuration."""
+    """Returns a list of dataframes, each containing the results for a unique configuration of hyper-parameter in the
+    given dataframe."""
     params = ["optim", "eta", "lmbda", "alpha", "tau", "contrastive_batch_size"]
     cfgs = list(set([tuple([d[p] for p in params]) for _, d in data.copy().iterrows()]))
     to_return = []
@@ -168,18 +176,23 @@ def get_fs_data(
                         continue
 
                 data_sub = pd.read_pickle(file)
-                # Filtering for hyper-param grid
+                # Filtering for hyper-param grid. Also serves to filer out the right transform.
                 if transform == "glocal":
                     allowed = GLOCAL_GRID
                 elif transform == "global":
-                    # global
                     allowed = GLOBAL_GRID
                 elif transform == "naive+bias":
                     allowed = NAIVEBIAS_GRID
                 else:
                     allowed = NAIVE_GRID
-                if all([data_sub[p].iloc[0] in allowed[p] for p in allowed.keys()]) or \
-                    all([data_sub[p].iloc[0] in WITHOUT_GRID[p] for p in WITHOUT_GRID.keys()]):
+                if all(
+                    [data_sub[p].iloc[0] in allowed[p] for p in allowed.keys()]
+                ) or all(
+                    [
+                        data_sub[p].iloc[0] in WITHOUT_GRID[p]
+                        for p in WITHOUT_GRID.keys()
+                    ]
+                ):
                     del data_sub["classes"]
                     data.append(data_sub)
                     n_files += 1
@@ -280,17 +293,15 @@ def avg_reps(data: pd.DataFrame):
     regressors = list(set(data.regressor))
     models = list(set(data.model))
     spss = list(set(data.samples_per_superclass))
-    reps = list(set(data.repetition))
 
-    new_cols = ["fs_accuracy_t", "fs_accuracy_diff_mean", "fs_accuracy_diff_std"]
+    new_cols = ["fs_accuracy_t"]
     rows = []
     for sps in spss:
         for s_i, s in enumerate(shots):
             for r_i, r in enumerate(regressors):
                 for m_i, model in enumerate(models):
-                    # Get basline accuracy
+                    # Get baseline accuracy
                     baseline = None
-                    baseline_reps = None
                     for cd in configs_data:
                         selection = cd[
                             (cd["model"] == model)
@@ -302,15 +313,6 @@ def avg_reps(data: pd.DataFrame):
                             baseline = np.mean(
                                 selection[(selection["transform"] == False)]["accuracy"]
                             )
-                            baseline_reps = [
-                                float(
-                                    selection[
-                                        (selection["transform"] == False)
-                                        & (selection["repetition"] == rep)
-                                    ]["accuracy"]
-                                )
-                                for rep in reps
-                            ]
                             break
 
                     if baseline is None:
@@ -322,6 +324,8 @@ def avg_reps(data: pd.DataFrame):
                             s,
                         )
                         continue
+
+                    # Get transformed accuracy & append result row
                     for cd in configs_data:
                         selection = cd[
                             (cd["model"] == model)
@@ -334,32 +338,20 @@ def avg_reps(data: pd.DataFrame):
                             selection[(selection["transform"] == True)]["accuracy"]
                         )
 
-                        if baseline is not None:
-                            try:
-                                diff = [
-                                    float(
-                                        selection[
-                                            (selection["transform"] == False)
-                                            & (selection["repetition"] == rep)
-                                        ]["accuracy"]
-                                    )
-                                    - baseline_reps[i_rep]
-                                    for i_rep, rep in enumerate(sorted(reps))
-                                ]
-                                acc_diff_mean = np.mean(diff)
-                                acc_diff_std = np.std(diff)
-                            except:
-                                acc_diff_mean = None
-                                acc_diff_std = None
-
-                        if acc_t is None or pd.isna(acc_t) or len(selection["model"]) == 0:
+                        if (
+                            acc_t is None
+                            or pd.isna(acc_t)
+                            or len(selection["model"]) == 0
+                        ):
                             continue
 
                         row = [
                             (acc if k == "accuracy" else selection[k].iloc[0])
                             for k in selection.columns
-                        ] + [acc_t, acc_diff_mean, acc_diff_std]
+                        ] + [acc_t]
                         rows.append(row)
+
+    # Make dataframe and postprocess all results
     new_data = pd.DataFrame(rows, columns=[c for c in data.columns] + new_cols)
     new_data["fs_accuracy"] = new_data["accuracy"].astype(float)
     for col in new_cols:
@@ -378,26 +370,26 @@ def main(args):
     tasks_fs = ["entity13", "entity30", None, "coarse", None, None]
     task_fs_is_super = [True, True, False, True, False, False]
 
-    print("### Loading FS naive data")
-    datas_naive_fs = [
-        get_fs_data(args.results_root, dataset, task, models, srcs, module, sps, transform="naive")
-        for dataset, task, sps in zip(datasets_fs, tasks_fs, task_fs_is_super)
-    ]
-    print("### Loading FS naive+bias data")
-    datas_naiveb_fs = [
-        get_fs_data(args.results_root, dataset, task, models, srcs, module, sps, transform="naive+bias")
-        for dataset, task, sps in zip(datasets_fs, tasks_fs, task_fs_is_super)
-    ]
-    print("### Loading FS global data")
-    datas_global_fs = [
-        get_fs_data(args.results_root, dataset, task, models, srcs, module, sps, transform="global")
-        for dataset, task, sps in zip(datasets_fs, tasks_fs, task_fs_is_super)
-    ]
-    print("### Loading FS glocal data")
-    datas_fs = [
-        get_fs_data(args.results_root, dataset, task, models, srcs, module, sps)
-        for dataset, task, sps in zip(datasets_fs, tasks_fs, task_fs_is_super)
-    ]
+    if args.transforms is None:
+        args.transforms = ["naive", "naive+bias", "global", "glocal"]
+
+    # Loading unprocessed FS results
+    datas = {}
+    for transform in args.transforms:
+        print(f"### Loading FS {transform} data")
+        datas[transform] = [
+            get_fs_data(
+                results_roots=args.results_root,
+                dataset=dataset,
+                task=task,
+                models=models,
+                srcs=srcs,
+                module=module,
+                sps=sps,
+                transform=transform,
+            )
+            for dataset, task, sps in zip(datasets_fs, tasks_fs, task_fs_is_super)
+        ]
 
     # Make task names pretty
     tasks_fs = [
@@ -405,12 +397,15 @@ def main(args):
         for d, t in zip(datasets_fs, tasks_fs)
     ]
 
-    # Filter out tasks that for which no results are available yet
-    tasks_fs = [ds for d, ds in zip(datas_fs, tasks_fs) if d is not None]
-    datas_fs = [data for data in datas_fs if data is not None]
-    datas_global_fs = [data for data in datas_global_fs if data is not None]
+    # Filter out tasks for which no results are available yet
+    tasks_fs = [
+        ds for d, ds in zip(datas[args.transforms[0]], tasks_fs) if d is not None
+    ]
+    for dk in datas.keys():
+        datas[dk] = [data for data in datas[dk] if data is not None]
 
-    for dt in zip(datas_fs, datas_global_fs, datas_naive_fs, datas_naiveb_fs, tasks_fs):
+    # Add task name
+    for dt in zip(*([dv for dv in datas.values()] + [tasks_fs])):
         for d in dt[:-1]:
             if d is not None:
                 d["dataset"] = dt[-1]
@@ -421,29 +416,27 @@ def main(args):
         print("Creating output directory to save results...\n")
         os.makedirs(args.out_dir)
 
+    # Save data averaged over repetitions
     print("### Averaging FS data")
-    data_avgs_naive_fs = [avg_reps(data) for data in datas_naive_fs]
-    data_avgs_naiveb_fs = [avg_reps(data) for data in datas_naiveb_fs]
-    data_avgs_fs = [avg_reps(data) for data in datas_fs]
-    data_avgs_global_fs = [avg_reps(data) for data in datas_global_fs]
-
-    # Save
-    pd.concat(data_avgs_fs).to_pickle(os.path.join(args.out_dir, "fs_results_glocal.pkl"))
-    pd.concat(data_avgs_global_fs).to_pickle(os.path.join(args.out_dir, "fs_results_global.pkl"))
-    pd.concat(data_avgs_naive_fs).to_pickle(os.path.join(args.out_dir, "fs_results_naive.pkl"))
-    pd.concat(data_avgs_naiveb_fs).to_pickle(os.path.join(args.out_dir, "fs_results_naive+bias.pkl"))
+    for dk, dv in datas.items():
+        data_avg = [avg_reps(data) for data in dv]
+        pd.concat(data_avg).to_pickle(
+            os.path.join(args.out_dir, f"fs_results_{str(dk)}.pkl")
+        )
 
     if args.all_reps:
+        # Save full data
         print("### Postprocessing not-averaged FS data")
-        datas_fs = [preprocess_reps(data) for data in datas_fs]
-        datas_global_fs = [preprocess_reps(data) for data in datas_global_fs]
-
-        # Save
-        pd.concat(datas_fs).to_pickle(os.path.join(args.out_dir, "fs_results_glocal_large.pkl"))
-        pd.concat(datas_global_fs).to_pickle(os.path.join(args.out_dir, "fs_results_global_large.pkl"))
+        for dk, dv in datas.items():
+            if str(dk) in ["glocal", "global"]:
+                data_large = [preprocess_reps(data) for data in dv]
+                pd.concat(dv).to_pickle(
+                    os.path.join(
+                        args.out_dir, f"fs_results_{str(data_large)}_large.pkl"
+                    )
+                )
 
 
 if __name__ == "__main__":
-    # parse arguments
     args = parseargs()
     main(args)

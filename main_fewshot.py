@@ -47,7 +47,7 @@ def parseargs():
         "--model_names",
         type=str,
         nargs="+",
-        help="models for which we want to extract featues",
+        help="models for which we want to extract features",
     )
     aa(
         "--module",
@@ -64,12 +64,6 @@ def parseargs():
             "custom",
             "torchvision",
             "ssl",
-            "google",
-            "loss",
-            "imagenet",
-            "torchvision",
-            "vit_same",
-            "vit_best",
         ],
         help="Source of (pretrained) models",
     )
@@ -110,6 +104,7 @@ def parseargs():
         type=str,
         nargs="+",
         choices=["ridge", "knn", "tip"],
+        default="ridge",
         help="Few shot model.",
     )
     aa(
@@ -630,7 +625,7 @@ if __name__ == "__main__":
             os.makedirs(out_path)
         out_file_path = os.path.join(out_path, "fewshot_results.pkl")
 
-        if False:#os.path.isfile(out_file_path):
+        if os.path.isfile(out_file_path):
             print("Results already exist. Skipping...")
             print(f"Results file: {out_file_path}")
             continue
@@ -657,7 +652,6 @@ if __name__ == "__main__":
                     )
                     > 0
                 )
-                is_opt = is_opt or "dino" in model_name.lower() #TODO: remove this hack
                 if is_opt == 0:
                     print("Transforms not optimal. Skipping...")
                     continue
